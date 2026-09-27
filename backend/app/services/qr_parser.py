@@ -95,6 +95,17 @@ def _parse_json(raw: str) -> dict:
     return result if result.get("product_identifier") else {"product_identifier": raw}
 
 
+def _format_gs1_date(val: str) -> str:
+    if len(val) == 6 and val.isdigit():
+        yy = int(val[:2])
+        mm = val[2:4]
+        dd = val[4:6]
+        century = "19" if yy >= 50 else "20"
+        day = "28" if dd == "00" else dd
+        return f"{century}{val[:2]}-{mm}-{day}"
+    return val
+
+
 def _parse_gs1(raw: str) -> Optional[dict]:
     matches = _GS1_PATTERN.findall(raw)
     if not matches:
@@ -104,7 +115,10 @@ def _parse_gs1(raw: str) -> Optional[dict]:
     for ai, value in matches:
         field_name = _GS1_AI.get(ai)
         if field_name:
-            result[field_name] = value.strip()
+            val = value.strip()
+            if ai in ("17", "11"):
+                val = _format_gs1_date(val)
+            result[field_name] = val
 
     return result if result.get("product_identifier") else None
 

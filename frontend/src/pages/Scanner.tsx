@@ -92,7 +92,7 @@ export default function Scanner() {
       identifier: parsed.gtin || rawCode,
       batch_number: parsed.batch,
       serial_number: parsed.serial,
-      expiry_date: parsed.expiry,
+      expiry_date: parsed.normalizedExpiry || parsed.expiry,
     });
   };
 

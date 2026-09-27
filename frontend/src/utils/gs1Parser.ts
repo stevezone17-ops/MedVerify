@@ -14,6 +14,7 @@ export interface ParsedGS1Payload {
   gtin?: string;
   batch?: string;
   expiry?: string;
+  normalizedExpiry?: string;
   serial?: string;
   manufacturingDate?: string;
   rawPayload: string;
@@ -137,8 +138,11 @@ export function parseGS1Payload(raw: string): ParsedGS1Payload {
 
       if (AI_DEFINITIONS[ai]) {
         const def = AI_DEFINITIONS[ai];
-        if (def.key === 'expiry' || def.key === 'manufacturingDate') {
-          (result as any)[def.key] = val.length === 6 ? formatGS1Date(val) : val;
+        if (def.key === 'expiry') {
+          result.expiry = val;
+          result.normalizedExpiry = val.length === 6 ? formatGS1Date(val) : val;
+        } else if (def.key === 'manufacturingDate') {
+          result.manufacturingDate = val.length === 6 ? formatGS1Date(val) : val;
         } else {
           (result as any)[def.key] = val;
         }

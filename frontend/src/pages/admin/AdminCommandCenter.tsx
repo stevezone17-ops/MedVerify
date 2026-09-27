@@ -234,9 +234,11 @@ export const AdminCommandCenter: React.FC = () => {
         {/* Active Investigations Queue */}
         <div className="command-center-panel investigations-panel">
           <ActiveInvestigationsQueue
-            analytics={analytics}
+            suspiciousCount={suspiciousCount}
+            reviewCount={reviewCount}
+            notFoundCount={notFoundCount}
             activeFilter={activeFilter}
-            onSelectFilter={setActiveFilter}
+            onFilterChange={(st) => setActiveFilter(st)}
           />
         </div>
       </div>
@@ -256,16 +258,16 @@ export const AdminCommandCenter: React.FC = () => {
           </div>
 
           <EventTimeline
-            items={recentVerifications}
+            events={recentVerifications}
+            onSelectEvent={handleInspect}
             activeFilter={activeFilter}
-            onInspect={handleInspect}
           />
         </div>
 
         <div className="command-center-panel specimen-panel">
           <ForensicCertificatePanel
-            item={latestSpecimen}
-            onInspectFull={handleInspect}
+            latestItem={latestSpecimen}
+            onInspect={handleInspect}
           />
         </div>
       </div>

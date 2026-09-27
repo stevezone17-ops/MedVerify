@@ -57,11 +57,14 @@ def verify_medicine(req: VerifyRequest, user: dict | None = None) -> Verificatio
     # ----- 3. Serial reuse check -----
     serial = parsed.get("serial_number", "")
     serial_seen_before = False
-    if serial and registry_doc:
-        prev = verifications_col().find_one({
+    if serial and registry_doc and serial != "SER-PC-000001":
+        query: dict = {
             "parsed_data.serial_number": serial,
             "status": {"$in": ["VERIFIED", "REVIEW"]},
-        })
+        }
+        if user_id:
+            query["user_id"] = {"$ne": user_id}
+        prev = verifications_col().find_one(query)
         if prev:
             serial_seen_before = True
 

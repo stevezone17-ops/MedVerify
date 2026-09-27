@@ -303,11 +303,27 @@ def calculate_score(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _normalize_date_str(val: str) -> str:
+    v = val.strip().lower()
+    if len(v) == 6 and v.isdigit():
+        yy = int(v[:2])
+        mm = v[2:4]
+        dd = v[4:6]
+        century = "19" if yy >= 50 else "20"
+        day = "28" if dd == "00" else dd
+        return f"{century}{v[:2]}-{mm}-{day}"
+    return v
+
+
 def _compare(name: str, field: str, expected: str, actual: str, weight: int) -> Check:
     """Case-insensitive, whitespace-normalised comparison."""
 
     e = expected.strip().lower()
     a = actual.strip().lower()
+
+    if field in ("expiry_date", "manufacturing_date"):
+        e = _normalize_date_str(e)
+        a = _normalize_date_str(a)
 
     if e == a:
         return Check(

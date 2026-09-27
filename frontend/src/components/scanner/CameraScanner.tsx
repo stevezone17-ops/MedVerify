@@ -11,6 +11,9 @@ import {
   ShieldCheck,
   Video,
   Sparkles,
+  Terminal,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { getBarcodeScanner, DetectedBarcode } from '../../utils/barcodeDetector';
 
@@ -20,13 +23,21 @@ export type CameraStatus =
   | 'CAMERA_ACTIVE'
   | 'SCANNING'
   | 'DETECTED'
+  | 'DECODING'
   | 'ERROR';
 
 interface CameraScannerProps {
-  onCodeDetected: (code: string) => void;
+  onCodeDetected: (code: string, format?: string) => void;
   onSwitchToManual: () => void;
   isVerifying: boolean;
   className?: string;
+}
+
+interface DiagnosticInfo {
+  status: string;
+  detectedFormat: string;
+  rawPayload: string;
+  fps: number;
 }
 
 export const CameraScanner: React.FC<CameraScannerProps> = ({
@@ -41,12 +52,28 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [isScanLocked, setIsScanLocked] = useState<boolean>(false);
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(true);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticInfo>({
+    status: 'IDLE',
+    detectedFormat: 'NONE',
+    rawPayload: '',
+    fps: 0,
+  });
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanLoopRef = useRef<number | null>(null);
   const lastScanTimestamp = useRef<number>(0);
+  const frameCountRef = useRef<number>(0);
+  const lastFpsTimestamp = useRef<number>(0);
   const hasDetectedRef = useRef<boolean>(false);
+  const statusRef = useRef<CameraStatus>('IDLE');
+
+  // Keep statusRef synchronized with state
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   // Stop camera media tracks cleanly
   const stopCameraStream = useCallback(() => {
@@ -56,7 +83,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => {
-        track.stop();
+        try {
+          track.stop();
+        } catch {
+          // ignore
+        }
       });
       streamRef.current = null;
     }
@@ -81,11 +112,19 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   }, [selectedDeviceId]);
 
   // Start real browser camera
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (modeOverride?: 'environment' | 'user') => {
     stopCameraStream();
     setStatus('REQUESTING_PERMISSION');
     setErrorMessage('');
     hasDetectedRef.current = false;
+    setIsScanLocked(false);
+
+    setDiagnostics((prev) => ({
+      ...prev,
+      status: 'INITIALIZING',
+      rawPayload: '',
+      detectedFormat: 'NONE',
+    }));
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setStatus('ERROR');
@@ -94,14 +133,15 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       return;
     }
 
+    const currentFacing = modeOverride || facingMode;
+
     try {
-      // Video constraints preferring back camera on mobile or selected device
       const constraints: MediaStreamConstraints = {
         audio: false,
         video: selectedDeviceId
           ? { deviceId: { exact: selectedDeviceId } }
           : {
-              facingMode: { ideal: facingMode },
+              facingMode: { ideal: currentFacing },
               width: { ideal: 1280, min: 640 },
               height: { ideal: 720, min: 480 },
             },
@@ -112,7 +152,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        // Wait until video metadata is loaded before starting scan loop
+        videoRef.current.autoplay = true;
+        videoRef.current.playsInline = true;
+        videoRef.current.muted = true;
+
         videoRef.current.onloadedmetadata = () => {
           if (videoRef.current) {
             videoRef.current.play().then(() => {
@@ -144,9 +187,18 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     }
   }, [enumerateCameras, facingMode, selectedDeviceId, stopCameraStream]);
 
-  // Detection loop
+  // Auto-start camera when mounted in Optical Camera mode
   useEffect(() => {
-    if (status !== 'CAMERA_ACTIVE' && status !== 'SCANNING') {
+    startCamera();
+    return () => {
+      stopCameraStream();
+    };
+  }, []);
+
+  // Real-time detection loop (approx 10 FPS throttled to ensure low CPU usage while feeling instantaneous)
+  useEffect(() => {
+    const isScanning = status === 'CAMERA_ACTIVE' || status === 'SCANNING';
+    if (!isScanning) {
       if (scanLoopRef.current) {
         cancelAnimationFrame(scanLoopRef.current);
         scanLoopRef.current = null;
@@ -155,31 +207,80 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     }
 
     const scanner = getBarcodeScanner();
+    lastFpsTimestamp.current = performance.now();
+    frameCountRef.current = 0;
 
     const scanFrame = async (timestamp: number) => {
-      if (hasDetectedRef.current) return;
+      if (hasDetectedRef.current || isScanLocked) return;
 
-      // Throttle scanning to every 160ms for CPU efficiency & responsive 6 FPS scan rate
-      if (timestamp - lastScanTimestamp.current > 160) {
+      // Update diagnostic FPS every 1000ms
+      if (timestamp - lastFpsTimestamp.current >= 1000) {
+        setDiagnostics((prev) => ({
+          ...prev,
+          fps: frameCountRef.current,
+        }));
+        frameCountRef.current = 0;
+        lastFpsTimestamp.current = timestamp;
+      }
+
+      // Throttle scanning to every 100ms (~10 FPS) for responsive real-time capture
+      if (timestamp - lastScanTimestamp.current >= 100) {
         lastScanTimestamp.current = timestamp;
+        frameCountRef.current++;
 
         if (videoRef.current && videoRef.current.readyState >= 2) {
           try {
+            // Update status indicator to SCANNING if still active
+            if (statusRef.current === 'CAMERA_ACTIVE') {
+              setStatus('SCANNING');
+            }
+
+            setDiagnostics((prev) => ({
+              ...prev,
+              status: 'SCANNING',
+            }));
+
             const detected = await scanner.detect(videoRef.current);
 
             if (detected.length > 0 && detected[0].rawValue && !hasDetectedRef.current) {
               const code = detected[0].rawValue.trim();
+              const detectedFmt = detected[0].format || 'BARCODE';
+
               if (code) {
+                // LOCK SCANNER TO PREVENT DUPLICATE BURSTS
                 hasDetectedRef.current = true;
+                setIsScanLocked(true);
+
                 setStatus('DETECTED');
-                // Stop camera stream immediately to save battery & release device
-                stopCameraStream();
-                onCodeDetected(code);
+                setDiagnostics({
+                  status: 'CODE DETECTED',
+                  detectedFormat: detectedFmt,
+                  rawPayload: code,
+                  fps: frameCountRef.current,
+                });
+
+                // Short visual feedback showing code detected, then decoding, then transition
+                setTimeout(() => {
+                  setStatus('DECODING');
+                  setDiagnostics((prev) => ({
+                    ...prev,
+                    status: 'DECODING',
+                  }));
+
+                  setTimeout(() => {
+                    // Stop camera tracks cleanly
+                    stopCameraStream();
+
+                    // Transition payload to verification pipeline
+                    onCodeDetected(code, detectedFmt);
+                  }, 200);
+                }, 300);
+
                 return;
               }
             }
-          } catch {
-            // Ignore scan evaluation errors for individual frames
+          } catch (scanErr) {
+            console.debug('[MedVerify Scanner] Frame evaluation tick:', scanErr);
           }
         }
       }
@@ -195,47 +296,60 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         scanLoopRef.current = null;
       }
     };
-  }, [status, onCodeDetected, stopCameraStream]);
+  }, [status, isScanLocked, onCodeDetected, stopCameraStream]);
 
-  // Stop camera when unmounting or when verification finishes
+  // Clean up on component unmount
   useEffect(() => {
     return () => {
       stopCameraStream();
     };
   }, [stopCameraStream]);
 
+  // Switch rear/front camera
   const toggleFacingMode = () => {
-    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
-    if (status === 'CAMERA_ACTIVE' || status === 'SCANNING') {
-      setTimeout(startCamera, 100);
-    }
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(nextMode);
+    startCamera(nextMode);
   };
 
   const isScanningActive = status === 'CAMERA_ACTIVE' || status === 'SCANNING';
+  const isDetected = status === 'DETECTED' || status === 'DECODING';
 
   return (
     <div className={`camera-scanner-module ${className}`}>
       {/* Viewport Frame */}
-      <div className="camera-viewport-card" role="region" aria-label="Optical Medicine Scanner Viewport">
+      <div
+        className={`camera-viewport-card ${isDetected ? 'is-code-detected' : ''}`}
+        role="region"
+        aria-label="Optical Medicine Scanner Viewport"
+      >
         {/* Real Live HTML Video Element */}
         <video
           ref={videoRef}
-          className={`camera-video-feed ${isScanningActive ? 'is-visible' : 'is-hidden'}`}
+          className={`camera-video-feed ${isScanningActive || isDetected ? 'is-visible' : 'is-hidden'}`}
           autoPlay
           playsInline
           muted
-          aria-hidden={!isScanningActive}
+          aria-hidden={!isScanningActive && !isDetected}
         />
 
         {/* Optical Viewfinder HUD Overlay */}
         <div className="camera-viewfinder-overlay">
           {/* Corner brackets */}
-          <div className="viewfinder-brackets">
+          <motion.div
+            className="viewfinder-brackets"
+            animate={
+              isDetected
+                ? { scale: [1, 1.08, 1], filter: 'drop-shadow(0 0 16px rgba(20, 184, 166, 0.9))' }
+                : { scale: 1 }
+            }
+            transition={{ duration: 0.3 }}
+          >
             <span className="bracket bracket--tl" />
             <span className="bracket bracket--tr" />
             <span className="bracket bracket--bl" />
             <span className="bracket bracket--br" />
-          </div>
+          </motion.div>
 
           {/* Animated Scanning Laser Beam - ONLY active while scanning */}
           {isScanningActive && (
@@ -247,7 +361,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 opacity: [0.6, 1, 0.6],
               }}
               transition={{
-                duration: 2.2,
+                duration: 2.0,
                 repeat: Infinity,
                 ease: 'easeInOut',
               }}
@@ -267,7 +381,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <button
                 type="button"
                 className="btn btn-primary btn-lg camera-start-cta"
-                onClick={startCamera}
+                onClick={() => startCamera()}
               >
                 <Camera size={18} />
                 <span>Start Camera</span>
@@ -288,20 +402,22 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             </div>
           )}
 
-          {/* State: CODE DETECTED */}
-          {status === 'DETECTED' && (
+          {/* State: CODE DETECTED / DECODING */}
+          {isDetected && (
             <div className="camera-state-overlay camera-state-overlay--detected">
               <motion.div
-                initial={{ scale: 0.5, opacity: 0 }}
+                initial={{ scale: 0.6, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 className="detected-check-mark"
               >
-                <CheckCircle2 size={42} />
+                <CheckCircle2 size={46} />
               </motion.div>
               <h3 className="camera-state-title" style={{ marginTop: '12px' }}>
-                Packaging Code Detected
+                {status === 'DETECTED' ? 'Code Detected' : 'Decoding Payload...'}
               </h3>
-              <p className="camera-state-desc">Extracting payload and contacting registry...</p>
+              <p className="camera-state-desc font-mono" style={{ fontSize: '12px' }}>
+                Format: {diagnostics.detectedFormat}
+              </p>
             </div>
           )}
 
@@ -316,7 +432,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                   ? 'Camera Access Required'
                   : errorType === 'NOT_FOUND'
                   ? 'Camera Not Available'
-                  : 'Optical Sensor Error'}
+                  : 'Unable to Read Code'}
               </h3>
               <p className="camera-state-desc">{errorMessage}</p>
 
@@ -324,7 +440,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  onClick={startCamera}
+                  onClick={() => startCamera()}
                 >
                   <RefreshCw size={14} />
                   <span>Try Again</span>
@@ -335,21 +451,47 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                   onClick={onSwitchToManual}
                 >
                   <Keyboard size={14} />
-                  <span>Enter Code Manually</span>
+                  <span>Enter Manually</span>
                 </button>
               </div>
             </div>
           )}
 
-          {/* Live Guide Caption when camera is active */}
+          {/* Live HUD Caption when camera is active */}
           {isScanningActive && (
             <div className="camera-active-hud">
               <div className="camera-live-pill">
                 <span className="live-dot" />
-                <span>CAMERA ACTIVE</span>
+                <span>{status === 'SCANNING' ? 'SCANNING...' : 'CAMERA ACTIVE'}</span>
               </div>
               <span className="camera-guide-text">
-                Center medicine QR, 2D DataMatrix, or EAN barcode within the frame
+                Align QR, DataMatrix, or barcode inside the frame
+              </span>
+            </div>
+          )}
+
+          {/* Live HUD Caption when detected */}
+          {status === 'DETECTED' && (
+            <div className="camera-active-hud">
+              <div className="camera-live-pill" style={{ backgroundColor: 'rgba(20, 184, 166, 0.25)', borderColor: '#14b8a6' }}>
+                <CheckCircle2 size={13} style={{ color: '#2dd4bf' }} />
+                <span style={{ color: '#2dd4bf' }}>CODE DETECTED</span>
+              </div>
+              <span className="camera-guide-text" style={{ color: '#2dd4bf', fontWeight: 600 }}>
+                Code detected
+              </span>
+            </div>
+          )}
+
+          {/* Live HUD Caption when decoding */}
+          {status === 'DECODING' && (
+            <div className="camera-active-hud">
+              <div className="camera-live-pill" style={{ backgroundColor: 'rgba(56, 189, 248, 0.25)', borderColor: '#38bdf8' }}>
+                <span className="live-dot" style={{ backgroundColor: '#38bdf8' }} />
+                <span style={{ color: '#38bdf8' }}>DECODING...</span>
+              </div>
+              <span className="camera-guide-text" style={{ color: '#38bdf8' }}>
+                Extracting GS1 pharmaceutical payload...
               </span>
             </div>
           )}
@@ -358,7 +500,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
       {/* Camera Controls Bar */}
       <div className="camera-controls-bar">
-        {isScanningActive ? (
+        {isScanningActive || isDetected ? (
           <div className="camera-active-controls">
             <button
               type="button"
@@ -370,12 +512,12 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <span>Stop Camera</span>
             </button>
 
-            {/* Switch Camera / Facing Mode Toggle */}
+            {/* Switch Camera Lens Toggle */}
             <button
               type="button"
               className="btn btn-ghost btn-sm"
               onClick={toggleFacingMode}
-              title="Switch between front and back camera"
+              title="Switch between front and rear camera"
               aria-label="Switch Camera Lens"
             >
               <RefreshCw size={14} />
@@ -388,7 +530,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 value={selectedDeviceId}
                 onChange={(e) => {
                   setSelectedDeviceId(e.target.value);
-                  setTimeout(startCamera, 100);
+                  setTimeout(() => startCamera(), 100);
                 }}
                 className="camera-device-select"
                 aria-label="Select camera device"
@@ -400,22 +542,118 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 ))}
               </select>
             )}
+
+            {/* Diagnostics toggle button */}
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs"
+              style={{ marginLeft: 'auto', fontSize: '11px', opacity: 0.8 }}
+              onClick={() => setShowDiagnostics((prev) => !prev)}
+              aria-expanded={showDiagnostics}
+              aria-label="Toggle Developer Diagnostics"
+            >
+              <Terminal size={12} style={{ marginRight: 4 }} />
+              <span>Developer Diagnostics</span>
+              {showDiagnostics ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
           </div>
         ) : (
-          <div className="camera-idle-footer">
+          <div className="camera-idle-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
             <span className="camera-spec-label">
               Optical Formats: GS1 DataMatrix • 2D QR • EAN-13 • Code-128
             </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs"
+              style={{ fontSize: '11px', opacity: 0.7 }}
+              onClick={() => setShowDiagnostics((prev) => !prev)}
+              aria-expanded={showDiagnostics}
+            >
+              <Terminal size={12} style={{ marginRight: 4 }} />
+              <span>Diagnostics</span>
+            </button>
           </div>
         )}
       </div>
+
+      {/* Developer Diagnostics Area (Exposed for debugging & verifiable decoding feedback) */}
+      <AnimatePresence>
+        {showDiagnostics && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="camera-diagnostics-panel"
+            style={{
+              backgroundColor: '#0a0f18',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '8px',
+              padding: '12px 14px',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+              color: '#94a3b8',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+              gap: '10px',
+              overflow: 'hidden',
+              marginTop: '10px',
+            }}
+          >
+            <div>
+              <span style={{ color: '#64748b', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>
+                Detection Status
+              </span>
+              <span style={{ color: isDetected ? '#34d399' : isScanningActive ? '#38bdf8' : '#e2e8f0', fontWeight: 600 }}>
+                {diagnostics.status}
+              </span>
+            </div>
+
+            <div>
+              <span style={{ color: '#64748b', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>
+                Detected Format
+              </span>
+              <span style={{ color: '#fcd34d', fontWeight: 600 }}>
+                {diagnostics.detectedFormat}
+              </span>
+            </div>
+
+            <div>
+              <span style={{ color: '#64748b', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>
+                Scan Loop Rate
+              </span>
+              <span style={{ color: '#a78bfa' }}>
+                {isScanningActive ? `${diagnostics.fps} FPS` : 'Idle'}
+              </span>
+            </div>
+
+            <div style={{ gridColumn: '1 / -1' }}>
+              <span style={{ color: '#64748b', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>
+                Raw Payload
+              </span>
+              <span
+                style={{
+                  color: diagnostics.rawPayload ? '#38bdf8' : '#475569',
+                  wordBreak: 'break-all',
+                  display: 'block',
+                  marginTop: '2px',
+                  fontWeight: diagnostics.rawPayload ? 600 : 400,
+                }}
+              >
+                {diagnostics.rawPayload || '(No code detected in current frame)'}
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Accessible aria-live status announcement */}
       <div className="sr-only" aria-live="polite">
         {status === 'IDLE' && 'Camera is ready to scan.'}
         {status === 'REQUESTING_PERMISSION' && 'Requesting camera access permissions.'}
-        {status === 'CAMERA_ACTIVE' && 'Camera is active. Align code in frame.'}
-        {status === 'DETECTED' && 'Barcode detected. Verifying payload.'}
+        {status === 'CAMERA_ACTIVE' && 'Camera is active. Align QR, DataMatrix, or barcode in frame.'}
+        {status === 'SCANNING' && 'Scanning for medicine barcodes in frame.'}
+        {status === 'DETECTED' && 'Packaging code detected. Preparing payload.'}
+        {status === 'DECODING' && 'Decoding GS1 barcode payload and contacting registry.'}
         {status === 'ERROR' && `Camera error: ${errorMessage}`}
       </div>
     </div>
