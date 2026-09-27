@@ -3,7 +3,8 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, field_serializer
+from app.utils.timestamps import normalize_datetime, to_iso_utc
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +55,16 @@ class VerificationResult(BaseModel):
     checks: list[VerificationCheck] = []
     issues: list[str] = []
     medicine: Optional[dict] = None
-    created_at: datetime
+    created_at: Optional[datetime] = None
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def validate_created_at(cls, v):
+        return normalize_datetime(v)
+
+    @field_serializer("created_at", when_used="json")
+    def serialize_created_at(self, v: Optional[datetime]) -> Optional[str]:
+        return to_iso_utc(v)
 
 
 class VerificationListItem(BaseModel):
@@ -66,7 +76,16 @@ class VerificationListItem(BaseModel):
     confidence_score: int
     product_name: Optional[str] = None
     manufacturer: Optional[str] = None
-    created_at: datetime
+    created_at: Optional[datetime] = None
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def validate_created_at(cls, v):
+        return normalize_datetime(v)
+
+    @field_serializer("created_at", when_used="json")
+    def serialize_created_at(self, v: Optional[datetime]) -> Optional[str]:
+        return to_iso_utc(v)
 
 
 class VerificationHistoryResponse(BaseModel):
@@ -76,3 +95,4 @@ class VerificationHistoryResponse(BaseModel):
     total: int
     page: int
     limit: int
+

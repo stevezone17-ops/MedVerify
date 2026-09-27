@@ -1,109 +1,131 @@
-# Counterfeit Medicine Detection via Packaging & QR Verification
+# MedVerify — Counterfeit Medicine Detection via Packaging & GS1 Verification
 
-A hackathon-ready web application for screening medicine packages using QR/barcode data, packaging details, and manufacturer/registry information.
+MedVerify is a production-grade pharmaceutical verification platform designed to screen medicine packaging, GS1 2D DataMatrix codes, QR codes, and EAN barcodes against an authoritative manufacturer registry with explainable confidence scoring.
 
-> **Important:** This project is a verification/screening prototype. A "verified" result means that the submitted information matched the configured verification sources; it is not a substitute for laboratory testing or an official regulatory determination.
+> **Important:** MedVerify is a digital verification and forensic screening engine. A "VERIFIED" result confirms cryptographic cross-referencing against authorized registry parameters; it is not a substitute for physical chemical laboratory testing.
 
-## Problem
+---
 
-Counterfeit and falsified medicines can be difficult to identify from packaging alone. The goal of this project is to provide a fast digital screening workflow that helps users identify suspicious or unmatched medicine records.
+## Architecture & Technology Stack
 
-## Core Workflow
+- **Frontend**: React 19, TypeScript, Vite, Framer Motion, Lucide Icons, `@supabase/supabase-js`, HTML5 Camera Scanner with ZXing multi-format decoding.
+- **Backend**: FastAPI, Python 3.12, Pydantic v2, `supabase` Python client, JWT Authentication with RBAC.
+- **Database & Services**: Supabase PostgreSQL, Supabase Auth, Row Level Security (RLS), Supabase Storage, Supabase Realtime.
+- **Verification Engine**: 6-factor weighted deterministic scoring model cross-referencing GTIN, manufacturer license, batch registry, expiration status, and serial reuse prevention.
 
-1. Scan a medicine QR code or barcode.
-2. Decode the product identifier and batch/serial information.
-3. Cross-check the decoded information against a manufacturer/product registry.
-4. Compare available packaging details such as product name, manufacturer, batch number and expiry.
-5. Generate a confidence score and verification status.
-6. Flag suspicious, incomplete or unmatched records.
-7. Store verification history for auditing and analysis.
+---
 
-## Suggested Statuses
+## Core Verification Pipeline
 
-- `VERIFIED` — required fields matched the configured registry.
-- `REVIEW` — some information is missing or inconsistent.
-- `SUSPICIOUS` — important identifiers conflict with the registry or expected format.
-- `NOT_FOUND` — no matching registry record was found.
-
-## Suggested Stack
-
-### Frontend
-- React
-- Vite
-- Tailwind CSS
-- QR/barcode scanner library
-- Responsive dashboard UI
-
-### Backend
-- FastAPI
-- Python
-- Pydantic
-- REST API
-
-### Database
-- MongoDB
-
-### Optional AI/ML Layer
-- Packaging image anomaly detection
-- OCR for printed batch/expiry/manufacturer information
-- Rule-based + ML confidence scoring
-
-## Main Screens
-
-- Landing / Home
-- Medicine Scanner
-- Verification Result
-- Medicine Details
-- Verification History
-- Manufacturer Registry
-- Admin Dashboard
-- Analytics
-- About / Help
-
-## Example Result
-
-```json
-{
-  "status": "VERIFIED",
-  "confidence": 96,
-  "product_name": "Example Medicine",
-  "manufacturer": "Example Pharma Ltd.",
-  "batch_number": "BATCH-2026-001",
-  "expiry_date": "2028-06-30",
-  "issues": []
-}
 ```
+[ Medicine Packaging (QR / 2D DataMatrix / Barcode) ]
+                         ↓
+               [ Browser Camera Scanner ]
+                         ↓
+            [ GS1 AI & Payload Parser ]
+                         ↓
+          [ FastAPI Verification Engine ]
+                         ↓
+   [ Supabase PostgreSQL Registry Cross-Check ]
+                         ↓
+[ Explainable Verdict & Realtime Admin Audit Stream ]
+```
+
+---
+
+## Canonical GS1 Test Barcode
+
+MedVerify is pre-calibrated to process the following live test specimen:
+
+```
+(01)89012345678901(10)BATCH-2026-001(17)280109(21)SER-PC-000001
+```
+
+**Expected Result:**
+- **Product**: Amoxicillin 500 mg Capsules
+- **Manufacturer**: PharmaCore Laboratories
+- **Status**: `VERIFIED`
+- **Confidence**: `85%`
+
+---
 
 ## Project Structure
 
 ```text
-counterfeit-medicine-verification/
-├── frontend/
+counterfeit_medicine_verification_md/
 ├── backend/
-├── database/
-├── ml/
-├── docs/
-├── tests/
-├── .env.example
-├── README.md
-└── LICENSE
+│   ├── app/
+│   │   ├── db/
+│   │   │   ├── supabase_client.py    # Supabase connection manager
+│   │   │   ├── storage.py            # Packaging evidence storage
+│   │   │   └── repositories/         # Profiles, Medicines, Batches, Verifications
+│   │   ├── routes/                   # Verification, User, History, Admin, Reports
+│   │   ├── schemas/                  # Pydantic data contracts
+│   │   ├── services/                 # Verification Engine, GS1 Parser, Scoring
+│   │   └── utils/                    # Timezone & ISO-8601 UTC utilities
+│   ├── scripts/
+│   │   ├── migrate_mongodb_to_supabase.py # Production migration utility
+│   │   └── seed_supabase.py               # Development seed script
+│   └── tests/                        # Full test suite (29 tests)
+├── frontend/
+│   ├── src/
+│   │   ├── api/                      # Centralized API client
+│   │   ├── components/               # Scanner, Badges, Modals, Results
+│   │   ├── lib/                      # Supabase client & Realtime subscriber
+│   │   ├── pages/                    # Home, Scanner, History, Admin Dashboard
+│   │   └── utils/                    # Barcode decoding & date utilities
+├── supabase/
+│   └── migrations/                   # 001 Schema, 002 Indexes, 003 RLS, 004 Functions
+├── SUPABASE_MIGRATION_PLAN.md        # Comprehensive migration blueprint
+├── SUPABASE_SETUP.md                 # Supabase configuration guide
+└── README.md
 ```
 
-## Development
+---
+
+## Getting Started
+
+### 1. Database Setup
+
+Follow [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) to apply the 4 SQL migrations located in `supabase/migrations/`.
+
+### 2. Backend Setup
 
 ```bash
-# Backend
 cd backend
-python -m venv .venv
-# Windows
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
 
-# Frontend
+# Create & activate Python virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1    # Windows PowerShell
+# source .venv/bin/activate     # macOS / Linux
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Start backend server
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+### 3. Frontend Setup
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-See the other Markdown files in this documentation pack for the detailed specification, roadmap, data model, API, testing and deployment plan.
+Visit [http://localhost:5173](http://localhost:5173) in your browser.
+
+---
+
+## Testing
+
+```bash
+# Run backend test suite
+cd backend
+pytest
+
+# Run frontend build validation
+cd frontend
+npm run build
+```

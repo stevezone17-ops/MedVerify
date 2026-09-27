@@ -32,7 +32,7 @@ interface NavGroup {
     id: string;
     label: string;
     to: string;
-    icon: React.ComponentType<{ size?: number; className?: string }>;
+    icon: React.ComponentType<any>;
     badge?: string;
   }[];
 }

@@ -2,7 +2,7 @@
 
 Orchestrates the full verification pipeline:
   1. Parse the raw identifier.
-  2. Look up the registry.
+  2. Look up the registry via repository.
   3. Run confidence scoring.
   4. Store the verification result + audit record.
   5. Return the explainable result.
@@ -10,10 +10,11 @@ Orchestrates the full verification pipeline:
 
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import datetime, timezone
 
-from app.database import medicines_col, verifications_col, audit_col
+from app.db.repositories import medicines_repo, verifications_repo
 from app.services.qr_parser import parse_identifier
 from app.services.scoring import calculate_score, Check
 from app.schemas.verification import (
@@ -25,7 +26,7 @@ from app.schemas.verification import (
 
 def verify_medicine(req: VerifyRequest, user: dict | None = None) -> VerificationResult:
     """Run the full verification pipeline and return an explainable result."""
-
+    start_time = time.perf_counter()
     now = datetime.now(timezone.utc)
     verification_id = f"vrf_{uuid.uuid4().hex[:12]}"
     user_id = str(user["_id"]) if user and "_id" in user else None
@@ -49,24 +50,16 @@ def verify_medicine(req: VerifyRequest, user: dict | None = None) -> Verificatio
 
     pid = parsed.get("product_identifier", "")
 
-    # ----- 2. Registry lookup -----
+    # ----- 2. Registry lookup via repository -----
     registry_doc = None
     if pid:
-        registry_doc = medicines_col().find_one({"product_identifier": pid})
+        registry_doc = medicines_repo.get_by_gtin(pid)
 
     # ----- 3. Serial reuse check -----
     serial = parsed.get("serial_number", "")
     serial_seen_before = False
     if serial and registry_doc and serial != "SER-PC-000001":
-        query: dict = {
-            "parsed_data.serial_number": serial,
-            "status": {"$in": ["VERIFIED", "REVIEW"]},
-        }
-        if user_id:
-            query["user_id"] = {"$ne": user_id}
-        prev = verifications_col().find_one(query)
-        if prev:
-            serial_seen_before = True
+        serial_seen_before = verifications_repo.check_serial_reuse(serial, user_id)
 
     # ----- 4. Score -----
     score_result = calculate_score(registry_doc, parsed, serial_seen_before)
@@ -75,7 +68,7 @@ def verify_medicine(req: VerifyRequest, user: dict | None = None) -> Verificatio
     medicine_summary = None
     matched_id = None
     if registry_doc:
-        matched_id = str(registry_doc["_id"])
+        matched_id = str(registry_doc.get("id") or registry_doc.get("_id"))
         mfr = registry_doc.get("manufacturer", {})
         medicine_summary = {
             "product_identifier": registry_doc.get("product_identifier", ""),
@@ -118,27 +111,14 @@ def verify_medicine(req: VerifyRequest, user: dict | None = None) -> Verificatio
         created_at=now,
     )
 
-    # ----- 7. Persist -----
+    # ----- 7. Persist via repository -----
+    elapsed_ms = max(1, int((time.perf_counter() - start_time) * 1000))
     doc_data = result.model_dump(exclude={"verification_id"})
-    doc_data["user_id"] = user_id
-    doc_data["user_email"] = user_email
-    doc_data["user_name"] = user_name
-
-    verifications_col().insert_one({
-        "_id": verification_id,
-        **doc_data,
-    })
-
-    audit_col().insert_one({
-        "_id": f"aud_{uuid.uuid4().hex[:12]}",
-        "event": "medicine_verification",
-        "verification_id": verification_id,
-        "status": score_result.status,
-        "confidence_score": score_result.score,
-        "user_id": user_id,
-        "user_email": user_email,
-        "timestamp": now,
-        "metadata": {"input_type": "qr", "identifier": req.identifier, "user_name": user_name},
-    })
+    verifications_repo.create_verification(
+        doc_data=doc_data,
+        verification_id=verification_id,
+        user=user,
+        processing_time_ms=elapsed_ms,
+    )
 
     return result

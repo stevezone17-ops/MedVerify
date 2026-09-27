@@ -13,7 +13,7 @@ _db: Database | None = None
 def get_client() -> MongoClient:
     global _client
     if _client is None:
-        _client = MongoClient(settings.mongodb_uri)
+        _client = MongoClient(settings.mongodb_uri, tz_aware=True)
     return _client
 
 
@@ -54,7 +54,8 @@ def ensure_indexes() -> None:
     medicines_col().create_index([("serial_number", ASCENDING)])
     medicines_col().create_index([("manufacturer.id", ASCENDING)])
 
-    verifications_col().create_index([("created_at", ASCENDING)])
+    verifications_col().create_index([("created_at", -1)])
+    verifications_col().create_index([("user_id", ASCENDING), ("created_at", -1)])
     verifications_col().create_index([("status", ASCENDING)])
     verifications_col().create_index([("raw_identifier", ASCENDING)])
 
