@@ -56,7 +56,7 @@ class VerificationResult(BaseModel):
     raw_identifier: str
     parsed_data: dict = {}
     matched_medicine_id: Optional[str] = None
-    status: str  # VERIFIED | REVIEW | SUSPICIOUS | NOT_FOUND | EXPIRED | REQUIRES_REVIEW
+    status: str  # VERIFIED | REVIEW | SUSPICIOUS | NOT_FOUND | EXPIRED | REQUIRES_REVIEW | INVALID
     confidence_score: int
     checks: list[VerificationCheck] = []
     issues: list[str] = []

@@ -12,7 +12,10 @@ router = APIRouter(prefix="/api", tags=["Reports"])
 
 class ReportCreate(BaseModel):
     verification_id: Optional[str] = None
-    report_type: str = Field("VERIFICATION_CONCERN", pattern="^(VERIFICATION_CONCERN|PACKAGING_DEFECT|EXPIRED_PRODUCT|SUSPICIOUS_SELLER)$")
+    report_type: str = Field(
+        "VERIFICATION_CONCERN",
+        pattern="^(VERIFICATION_CONCERN|PACKAGING_DEFECT|EXPIRED_PRODUCT|SUSPICIOUS_SELLER|BATCH_NOT_RECOGNIZED|MANUFACTURER_MISMATCH|PRODUCT_MISMATCH|EXPIRY_MISMATCH|SERIAL_MISMATCH|SUSPICIOUS_PACKAGING|INCORRECT_BARCODE|TAMPERED_SEAL|ADVERSE_REACTION|OTHER)$",
+    )
     description: str = Field(..., min_length=5, max_length=2000)
 
 

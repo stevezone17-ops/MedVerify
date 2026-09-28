@@ -44,8 +44,10 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
 }) => {
   const isVerified = result.status === 'VERIFIED';
   const isSuspicious = result.status === 'SUSPICIOUS';
-  const isReview = result.status === 'REVIEW';
+  const isReview = result.status === 'REVIEW' || result.status === 'REQUIRES_REVIEW';
   const isNotFound = result.status === 'NOT_FOUND';
+  const isExpired = result.status === 'EXPIRED';
+  const isInvalid = result.status === 'INVALID';
 
   const med = result.medicine;
   const productName = med?.product_name || `Scanned Item: ${result.raw_identifier}`;
@@ -143,6 +145,8 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
             {isReview && <AlertTriangle size={32} />}
             {isSuspicious && <XOctagon size={32} />}
             {isNotFound && <HelpCircle size={32} />}
+            {isExpired && <AlertTriangle size={32} />}
+            {isInvalid && <XOctagon size={32} />}
           </div>
           <div>
             <div className="result-status-row">
@@ -160,6 +164,8 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
               {isReview && 'Packaging parameters require secondary pharmacist review before dispensing.'}
               {isSuspicious && 'Critical discrepancies detected between packaging data and official registry record.'}
               {isNotFound && 'This product identifier was not found in the authorized pharmaceutical registry.'}
+              {isExpired && 'Product has passed its regulatory expiry date. Do not use or administer expired medicines.'}
+              {isInvalid && 'The scanned data did not produce a valid pharmaceutical verification payload.'}
             </p>
           </div>
         </div>
@@ -284,8 +290,8 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
 
       {/* Action Footer */}
       <div className="result-actions-footer">
-        {/* If verified: Add to Medicine Cabinet */}
-        {isVerified && (
+        {/* If verified or expired: Add to Medicine Cabinet */}
+        {(isVerified || isExpired) && (
           <button
             type="button"
             className={`btn btn-lg result-action-btn ${cabinetSaved ? 'btn-success' : 'btn-accent'}`}
@@ -303,8 +309,8 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
           </button>
         )}
 
-        {/* If non-verified: Report Concern */}
-        {!isVerified && (
+        {/* If non-verified and non-expired: Report Concern */}
+        {!isVerified && !isExpired && (
           <button
             type="button"
             className="btn btn-warning btn-lg result-action-btn"

@@ -11,6 +11,12 @@ import {
   Shield,
   FileText,
   AlertCircle,
+  ScanLine,
+  Camera,
+  Keyboard,
+  QrCode,
+  Barcode,
+  RefreshCw,
 } from 'lucide-react';
 import { Link, useNavigate } from '../../router';
 import { getUserHistory } from '../../api/client';
@@ -152,9 +158,10 @@ export const UserHistory: React.FC = () => {
                   <th>STATUS</th>
                   <th>MEDICINE SPECIMEN</th>
                   <th>MANUFACTURER</th>
+                  <th>METHOD</th>
                   <th>RAW IDENTIFIER</th>
                   <th>TIMESTAMP</th>
-                  <th style={{ textAlign: 'right' }}>ACTION</th>
+                  <th style={{ textAlign: 'right' }}>ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
@@ -179,6 +186,15 @@ export const UserHistory: React.FC = () => {
                       <span className="user-history-mfr">{row.manufacturer || 'Unspecified'}</span>
                     </td>
                     <td>
+                      <span className="user-history-method-badge">
+                        {(row.verification_method || 'QR').toUpperCase() === 'PACKAGING_OCR' ? 'OCR' :
+                         (row.verification_method || 'QR').toUpperCase() === 'MANUAL' ? 'Manual' :
+                         (row.verification_method || 'QR').toUpperCase() === 'DATAMATRIX' ? 'DataMatrix' :
+                         (row.verification_method || 'QR').toUpperCase() === 'BARCODE' ? 'Barcode' :
+                         (row.verification_method || 'QR').toUpperCase() === 'NFC' ? 'NFC' : 'QR'}
+                      </span>
+                    </td>
+                    <td>
                       <code className="user-history-code">{row.raw_identifier}</code>
                     </td>
                     <td>
@@ -187,13 +203,24 @@ export const UserHistory: React.FC = () => {
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <Link
-                        to={`/app/result/${row.verification_id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="user-history-inspect-btn"
-                      >
-                        Inspect Result
-                      </Link>
+                      <div className="user-history-action-group">
+                        <Link
+                          to={`/app/result/${row.verification_id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="user-history-inspect-btn"
+                        >
+                          Inspect
+                        </Link>
+                        <Link
+                          to={`/app/scanner?mode=manual`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="user-history-reverify-btn"
+                          title="Verify this medicine again"
+                        >
+                          <RefreshCw size={12} />
+                          <span>Verify Again</span>
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}

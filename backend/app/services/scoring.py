@@ -284,9 +284,11 @@ def calculate_score(
     if has_critical_fail:
         status = "SUSPICIOUS"
     elif is_expired:
-        status = "REVIEW"
+        status = "EXPIRED"
+        if "Product has passed its expiry date." not in issues:
+            issues.append("Product has passed its expiry date.")
     elif skipped_count >= 3 and provided_count <= 2:
-        status = "REVIEW"
+        status = "REQUIRES_REVIEW"
         if "Insufficient verification data — several fields were not provided." not in issues:
             issues.append("Insufficient verification data — several fields were not provided.")
     elif score >= 80:

@@ -32,11 +32,11 @@ def test_gs1_canonical_regression_payload():
 
 
 def test_expired_medicine_scenario():
-    """Verify that an expired medicine is flagged for review."""
+    """Verify that an expired medicine is flagged as EXPIRED."""
     req = VerifyRequest(identifier="89012345678908")
     res = verify_medicine(req)
 
-    assert res.status == "REVIEW"
+    assert res.status == "EXPIRED"
     assert any("expiry" in issue.lower() or "expired" in issue.lower() for issue in res.issues)
 
 

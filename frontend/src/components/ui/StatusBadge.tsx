@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, AlertTriangle, XOctagon, HelpCircle } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XOctagon, HelpCircle, Clock } from 'lucide-react';
 import type { VerificationStatus } from '../../types';
 
 interface StatusBadgeProps {
@@ -29,6 +29,21 @@ const STATUS_METADATA: Record<string, { label: string; icon: typeof CheckCircle2
     label: 'Not Registered',
     icon: HelpCircle,
     themeClass: 'status-badge--notfound',
+  },
+  EXPIRED: {
+    label: 'Expired',
+    icon: Clock,
+    themeClass: 'status-badge--expired',
+  },
+  REQUIRES_REVIEW: {
+    label: 'Requires Review',
+    icon: AlertTriangle,
+    themeClass: 'status-badge--review',
+  },
+  INVALID: {
+    label: 'Invalid',
+    icon: XOctagon,
+    themeClass: 'status-badge--suspicious',
   },
 };
 

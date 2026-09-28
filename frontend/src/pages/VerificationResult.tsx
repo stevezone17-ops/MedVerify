@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useLocation, Link } from '../router';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -19,8 +19,17 @@ import {
   Hash,
   AlertCircle,
   ExternalLink,
+  Clock,
+  Package,
+  Flag,
+  Check,
+  Loader2,
+  Send,
+  X,
+  Camera,
+  Keyboard,
 } from 'lucide-react';
-import { getVerification } from '../api/client';
+import { getVerification, addToCabinet, submitReport } from '../api/client';
 import type { VerificationResult as VResult, VerificationCheck, VerificationStatus } from '../types';
 import { ConfidenceRing } from '../components/ui/ConfidenceRing';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -63,6 +72,27 @@ const STATUS_HERO: Record<
     bannerClass: 'result-certificate__banner--notfound',
     icon: HelpCircle,
   },
+  EXPIRED: {
+    title: 'Medicine Expired',
+    description:
+      'This product has passed its regulatory expiry date. Do not use or administer expired medicines.',
+    bannerClass: 'result-certificate__banner--expired',
+    icon: Clock,
+  },
+  REQUIRES_REVIEW: {
+    title: 'Insufficient Data — Review Required',
+    description:
+      'Several packaging fields were missing. A pharmacist or secondary verification is recommended.',
+    bannerClass: 'result-certificate__banner--review',
+    icon: AlertTriangle,
+  },
+  INVALID: {
+    title: 'Invalid Verification Payload',
+    description:
+      'The scanned or entered data did not produce a valid pharmaceutical verification payload.',
+    bannerClass: 'result-certificate__banner--suspicious',
+    icon: XOctagon,
+  },
 };
 
 export default function VerificationResultPage() {
@@ -72,6 +102,18 @@ export default function VerificationResultPage() {
   const [loading, setLoading] = useState(!result);
   const [error, setError] = useState('');
 
+  // Daily-use actions: Cabinet & Report
+  const [savedToCabinet, setSavedToCabinet] = useState(false);
+  const [savingCabinet, setSavingCabinet] = useState(false);
+  const [cabinetMsg, setCabinetMsg] = useState('');
+
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [reportSuccess, setReportSuccess] = useState(false);
+  const [reportType, setReportType] = useState('SUSPICIOUS_PACKAGING');
+  const [reportDesc, setReportDesc] = useState('');
+  const [reportErr, setReportErr] = useState('');
+
   useEffect(() => {
     if (!result && id) {
       getVerification(id)
@@ -80,6 +122,62 @@ export default function VerificationResultPage() {
         .finally(() => setLoading(false));
     }
   }, [id, result]);
+
+  const handleSaveToCabinet = async () => {
+    if (!result || savedToCabinet || savingCabinet) return;
+    setSavingCabinet(true);
+    setCabinetMsg('');
+    try {
+      await addToCabinet({
+        medicine_id: result.matched_medicine_id || undefined,
+        verification_id: result.verification_id,
+        product_name: result.medicine?.product_name || result.parsed_data?.gtin || result.raw_identifier,
+        manufacturer: result.medicine?.manufacturer || undefined,
+        batch_number: result.parsed_data?.batch_number || result.medicine?.batch_number || undefined,
+        expiry_date: result.parsed_data?.expiry_date || result.medicine?.expiry_date || undefined,
+        notes: `Added from verification ${result.verification_id}`,
+      });
+      setSavedToCabinet(true);
+      setCabinetMsg('Saved to Medicine Cabinet');
+    } catch (err: any) {
+      setCabinetMsg(err.message || 'Failed to save to cabinet');
+    } finally {
+      setSavingCabinet(false);
+    }
+  };
+
+  const handleSubmitConcern = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!result || !reportDesc.trim() || submittingReport) return;
+    setSubmittingReport(true);
+    setReportErr('');
+    try {
+      await submitReport({
+        verification_id: result.verification_id,
+        report_type: reportType,
+        description: reportDesc.trim(),
+      });
+      setReportSuccess(true);
+      setTimeout(() => {
+        setReportModalOpen(false);
+        setReportSuccess(false);
+        setReportDesc('');
+      }, 2000);
+    } catch (err: any) {
+      setReportErr(err.message || 'Failed to submit report');
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
+  const getMethodLabel = (method?: string, inputType?: string) => {
+    const m = (method || inputType || 'QR').toUpperCase();
+    if (m === 'PACKAGING_OCR') return 'Packaging OCR';
+    if (m === 'MANUAL') return 'Manual Entry';
+    if (m === 'DATAMATRIX') return 'GS1 DataMatrix';
+    if (m === 'BARCODE') return 'Barcode Scan';
+    return 'QR Code';
+  };
 
   if (loading) {
     return (
@@ -131,7 +229,9 @@ export default function VerificationResultPage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: 'var(--space-2)',
+          marginBottom: 'var(--space-3)',
+          flexWrap: 'wrap',
+          gap: 'var(--space-2)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
@@ -148,7 +248,36 @@ export default function VerificationResultPage() {
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+          {/* Cabinet Button */}
+          <button
+            type="button"
+            className={`btn btn-sm ${savedToCabinet ? 'btn-secondary' : 'btn-outline-primary'}`}
+            onClick={handleSaveToCabinet}
+            disabled={savingCabinet || savedToCabinet}
+            title={savedToCabinet ? 'Already in your medicine cabinet' : 'Add to personal medicine cabinet'}
+          >
+            {savingCabinet ? (
+              <Loader2 size={13} className="telemetry-spinner" />
+            ) : savedToCabinet ? (
+              <Check size={13} style={{ color: '#16a34a' }} />
+            ) : (
+              <Package size={13} />
+            )}
+            <span>{savedToCabinet ? 'In Cabinet' : 'Add to Cabinet'}</span>
+          </button>
+
+          {/* Report Concern Button */}
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setReportModalOpen(true)}
+            title="Report suspicious medicine or packaging defect"
+          >
+            <Flag size={13} style={{ color: 'var(--color-review-dot)' }} />
+            <span>Report Concern</span>
+          </button>
+
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -158,12 +287,19 @@ export default function VerificationResultPage() {
             <Printer size={14} />
             <span>Print Report</span>
           </button>
+
           <Link to="/app/scanner" className="btn btn-primary btn-sm">
             <ScanLine size={14} />
             <span>Scan Another</span>
           </Link>
         </div>
       </div>
+
+      {cabinetMsg && !savedToCabinet && (
+        <div style={{ color: '#dc2626', fontSize: 'var(--text-xs)', marginBottom: 'var(--space-2)' }}>
+          {cabinetMsg}
+        </div>
+      )}
 
       {/* Main Certificate Card */}
       <div className="result-certificate">
@@ -488,6 +624,117 @@ export default function VerificationResultPage() {
           </div>
         </div>
       </div>
+
+      {/* Report Modal */}
+      <AnimatePresence>
+        {reportModalOpen && (
+          <motion.div
+            className="report-modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setReportModalOpen(false)}
+          >
+            <motion.div
+              className="report-modal-content"
+              initial={{ scale: 0.92, opacity: 0, y: 16 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 16 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="report-modal-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Flag size={18} style={{ color: 'var(--color-review-dot)' }} />
+                  <h3 className="report-modal-title">Report Quality / Authenticity Concern</h3>
+                </div>
+                <button
+                  type="button"
+                  className="report-modal-close"
+                  onClick={() => setReportModalOpen(false)}
+                  aria-label="Close report modal"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {reportSuccess ? (
+                <div className="report-success-view">
+                  <CheckCircle2 size={42} className="report-success-icon" />
+                  <h4>Report Successfully Filed</h4>
+                  <p>
+                    Thank you. Your report has been logged with regulatory authorities for forensic review.
+                  </p>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmitConcern} className="report-modal-form">
+                  <div className="form-group">
+                    <label className="form-label">Type of Issue</label>
+                    <select
+                      className="form-select"
+                      value={reportType}
+                      onChange={(e) => setReportType(e.target.value)}
+                    >
+                      <option value="SUSPICIOUS_PACKAGING">Suspicious or Altered Packaging</option>
+                      <option value="INCORRECT_BARCODE">Barcode or DataMatrix Mismatch</option>
+                      <option value="EXPIRED_PRODUCT">Dispensed Expired Product</option>
+                      <option value="TAMPERED_SEAL">Broken or Tampered Security Seal</option>
+                      <option value="BATCH_NOT_RECOGNIZED">Batch Not Recognized in Registry</option>
+                      <option value="MANUFACTURER_MISMATCH">Manufacturer Name Discrepancy</option>
+                      <option value="ADVERSE_REACTION">Unexpected Physical Characteristics</option>
+                      <option value="OTHER">Other Quality or Counterfeit Concern</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Description & Findings</label>
+                    <textarea
+                      className="form-textarea"
+                      rows={4}
+                      placeholder="Please describe where you obtained this medicine and what discrepancies you noticed (e.g., blurry text, different font, unsealed box)..."
+                      value={reportDesc}
+                      onChange={(e) => setReportDesc(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  {reportErr && (
+                    <div style={{ color: '#dc2626', fontSize: 'var(--text-xs)', marginBottom: 'var(--space-2)' }}>
+                      {reportErr}
+                    </div>
+                  )}
+
+                  <div className="report-modal-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setReportModalOpen(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={submittingReport || !reportDesc.trim()}
+                    >
+                      {submittingReport ? (
+                        <>
+                          <Loader2 size={15} className="telemetry-spinner" />
+                          <span>Submitting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send size={15} />
+                          <span>Submit Official Report</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

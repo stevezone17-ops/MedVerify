@@ -199,6 +199,7 @@ class VerificationsRepository:
                         "confidence_score": row.get("confidence", 0),
                         "product_name": med.get("product_name") or row.get("gtin"),
                         "manufacturer": med.get("manufacturer") or row.get("user_name"),
+                        "verification_method": row.get("verification_method", "QR"),
                         "created_at": to_iso_utc(row.get("created_at")),
                     })
                 return items, total
@@ -240,6 +241,7 @@ class VerificationsRepository:
                 "confidence_score": d.get("confidence_score", 0),
                 "product_name": med.get("product_name"),
                 "manufacturer": med.get("manufacturer") or d.get("user_name"),
+                "verification_method": (d.get("verification_method") or d.get("input_type") or "QR").upper(),
                 "created_at": to_iso_utc(d.get("created_at") or d.get("createdAt")),
             })
         return items, total

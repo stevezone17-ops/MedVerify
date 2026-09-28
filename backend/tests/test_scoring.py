@@ -71,7 +71,7 @@ def test_score_expired_medicine():
         "expiry_date": "2020-01-01",
     }
     res = calculate_score(expired_reg, parsed, serial_seen_before=False)
-    assert res.status == "REVIEW"
+    assert res.status == "EXPIRED"
     assert any("expiry" in issue.lower() or "expired" in issue.lower() for issue in res.issues)
 
 
@@ -79,5 +79,5 @@ def test_score_insufficient_fields():
     # Only product_identifier provided, everything else skipped
     parsed = {"product_identifier": "89012345678901"}
     res = calculate_score(SAMPLE_REGISTRY, parsed, serial_seen_before=False)
-    # Skipped fields should trigger REVIEW due to insufficient verification data
-    assert res.status == "REVIEW"
+    # Skipped fields should trigger REQUIRES_REVIEW due to insufficient verification data
+    assert res.status == "REQUIRES_REVIEW"

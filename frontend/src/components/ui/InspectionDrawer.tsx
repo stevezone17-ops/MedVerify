@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -14,8 +14,12 @@ import {
   Barcode,
   Layers,
   FileText,
+  Loader2,
+  GitCommit,
+  Check,
 } from 'lucide-react';
-import type { VerificationListItem, VerificationStatus } from '../../types';
+import type { VerificationListItem, VerificationStatus, VerificationInvestigation } from '../../types';
+import { getAdminInvestigation } from '../../api/client';
 import { StatusBadge } from './StatusBadge';
 import { drawerVariants, backdropVariants } from '../../animations/motion';
 import { Link } from '../../router';
@@ -32,6 +36,24 @@ export const InspectionDrawer: React.FC<InspectionDrawerProps> = ({
   onClose,
 }) => {
   const drawerRef = useRef<HTMLDivElement>(null);
+  const [investigation, setInvestigation] = useState<VerificationInvestigation | null>(null);
+  const [loadingInv, setLoadingInv] = useState(false);
+
+  // Fetch full forensic data when item changes
+  useEffect(() => {
+    if (isOpen && item?.verification_id) {
+      setLoadingInv(true);
+      getAdminInvestigation(item.verification_id)
+        .then((data) => setInvestigation(data))
+        .catch((err) => {
+          console.warn('Investigation load error:', err);
+          setInvestigation(null);
+        })
+        .finally(() => setLoadingInv(false));
+    } else {
+      setInvestigation(null);
+    }
+  }, [isOpen, item?.verification_id]);
 
   // Close on Escape key
   useEffect(() => {
@@ -60,41 +82,43 @@ export const InspectionDrawer: React.FC<InspectionDrawerProps> = ({
 
   const isVerified = item.status === 'VERIFIED';
   const isSuspicious = item.status === 'SUSPICIOUS';
-  const isReview = item.status === 'REVIEW';
+  const isReview = item.status === 'REVIEW' || item.status === 'REQUIRES_REVIEW';
+  const isExpired = item.status === 'EXPIRED';
 
-  // Synthetic or standard checks based on status
-  const checks = [
-    {
-      name: 'Product Identifier (GTIN)',
-      status: item.status !== 'NOT_FOUND' ? 'PASS' : 'FAIL',
-      detail: item.raw_identifier,
-    },
-    {
-      name: 'Manufacturer Identity',
-      status: item.manufacturer ? 'PASS' : 'WARN',
-      detail: item.manufacturer || 'Unspecified manufacturer',
-    },
-    {
-      name: 'Batch Format & Integrity',
-      status: isSuspicious ? 'FAIL' : 'PASS',
-      detail: isSuspicious ? 'Batch checksum anomaly detected' : 'Cryptographically valid batch code',
-    },
-    {
-      name: 'Serial Number Uniqueness',
-      status: isSuspicious ? 'FAIL' : 'PASS',
-      detail: isSuspicious ? 'High duplicate scan frequency detected' : 'Single issuance verified in registry',
-    },
-    {
-      name: 'Regulatory Expiry Window',
-      status: isReview ? 'WARN' : 'PASS',
-      detail: isReview ? 'Shelf life review required' : 'Product within active therapeutic window',
-    },
-    {
-      name: 'Packaging Security Seal',
-      status: isSuspicious ? 'FAIL' : 'PASS',
-      detail: isSuspicious ? 'Tamper indicator flagged' : 'Factory optical pattern confirmed',
-    },
-  ];
+  // Use real checks from backend investigation if available; fallback to standard checks
+  const checks = investigation?.checks && investigation.checks.length > 0
+    ? investigation.checks.map((chk) => ({
+        name: chk.name || chk.field,
+        status: chk.status,
+        detail: chk.detail,
+      }))
+    : [
+        {
+          name: 'Product Identifier (GTIN)',
+          status: item.status !== 'NOT_FOUND' ? 'PASS' : 'FAIL',
+          detail: item.raw_identifier,
+        },
+        {
+          name: 'Manufacturer Identity',
+          status: item.manufacturer ? 'PASS' : 'WARN',
+          detail: item.manufacturer || 'Unspecified manufacturer',
+        },
+        {
+          name: 'Batch Format & Integrity',
+          status: isSuspicious ? 'FAIL' : 'PASS',
+          detail: isSuspicious ? 'Batch checksum anomaly detected' : 'Cryptographically valid batch code',
+        },
+        {
+          name: 'Serial Number Uniqueness',
+          status: isSuspicious ? 'FAIL' : 'PASS',
+          detail: isSuspicious ? 'Duplicate scan frequency flagged' : 'Single issuance verified in registry',
+        },
+        {
+          name: 'Regulatory Expiry Window',
+          status: isExpired ? 'FAIL' : isReview ? 'WARN' : 'PASS',
+          detail: isExpired ? 'Product expired' : 'Therapeutic window validated',
+        },
+      ];
 
   return (
     <AnimatePresence>
@@ -217,6 +241,43 @@ export const InspectionDrawer: React.FC<InspectionDrawerProps> = ({
                 ))}
               </div>
             </div>
+
+            {/* End-to-End Pipeline Execution Trace */}
+            {investigation?.pipeline_stages && investigation.pipeline_stages.length > 0 && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">Pipeline Execution Trace</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {investigation.pipeline_stages.map((stg, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        backgroundColor: 'var(--color-slate-50)',
+                        border: '1px solid var(--color-border-subtle)',
+                        fontSize: '12px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: stg.status === 'FAIL' || stg.status === 'SUSPICIOUS' ? '#dc2626' : '#16a34a' }}>
+                          {stg.status === 'FAIL' || stg.status === 'SUSPICIOUS' ? <XOctagon size={14} /> : <CheckCircle2 size={14} />}
+                        </span>
+                        <div>
+                          <div style={{ fontWeight: 600, color: 'var(--color-slate-800)' }}>{stg.label}</div>
+                          {stg.detail && <div style={{ fontSize: '11px', color: 'var(--color-slate-500)' }}>{stg.detail}</div>}
+                        </div>
+                      </div>
+                      <span className={`drawer-check-tag drawer-check-tag--${stg.status.toLowerCase()}`}>
+                        {stg.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Drawer Footer */}

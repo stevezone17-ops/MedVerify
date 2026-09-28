@@ -275,3 +275,110 @@ def get_system_health():
 def get_analytics():
     """Return summary statistics for the admin dashboard."""
     return verifications_repo.get_admin_analytics()
+
+
+@router.get("/investigation/{verification_id}")
+def get_investigation(verification_id: str):
+    """Return full verification record plus pipeline events for admin forensic investigation."""
+    doc = verifications_repo.get_by_id(verification_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Verification not found.")
+
+    # Try to fetch pipeline events from Supabase
+    events = []
+    client = get_supabase_client()
+    if client:
+        try:
+            # Look up the Supabase UUID from the legacy_id
+            v_res = client.table("verification_records").select("id").eq(
+                "legacy_id", verification_id
+            ).limit(1).execute()
+            supa_v_id = None
+            if v_res.data:
+                supa_v_id = v_res.data[0]["id"]
+            else:
+                # Try direct UUID match
+                try:
+                    uuid.UUID(verification_id)
+                    supa_v_id = verification_id
+                except ValueError:
+                    pass
+
+            if supa_v_id:
+                ev_res = client.table("verification_events").select("*").eq(
+                    "verification_id", supa_v_id
+                ).order("timestamp").execute()
+                events = ev_res.data or []
+        except Exception as exc:
+            logger.warning("Failed to load pipeline events: %s", exc)
+
+    # Build pipeline stages from the verification data itself
+    pipeline_stages = _build_pipeline_stages(doc, events)
+
+    return {
+        **doc,
+        "pipeline_events": events,
+        "pipeline_stages": pipeline_stages,
+    }
+
+
+def _build_pipeline_stages(doc: dict, events: list) -> list[dict]:
+    """Reconstruct pipeline stages from the verification record and any stored events."""
+    stages = []
+    method = (doc.get("verification_method") or doc.get("input_type") or "QR").upper()
+    raw = doc.get("raw_identifier", "")
+
+    # Stage 1: Optical Capture / Input
+    stages.append({
+        "stage": "input_capture",
+        "label": "Input Capture",
+        "status": "COMPLETE",
+        "detail": f"Received {method} payload: {raw[:60]}{'...' if len(raw) > 60 else ''}",
+    })
+
+    # Stage 2: Extraction / Parsing
+    parsed = doc.get("parsed_data") or {}
+    stages.append({
+        "stage": "extraction",
+        "label": "Extraction & Normalization",
+        "status": "COMPLETE",
+        "detail": f"Parsed {len(parsed)} fields from {method} input",
+    })
+
+    # Stage 3: Registry Lookup
+    has_match = bool(doc.get("matched_medicine_id") or (doc.get("medicine") and doc["medicine"].get("product_name")))
+    stages.append({
+        "stage": "registry_lookup",
+        "label": "Registry Lookup",
+        "status": "COMPLETE" if has_match else "NO_MATCH",
+        "detail": "Product found in registry" if has_match else "No matching product in registry",
+    })
+
+    # Stage 4–6: Validations from checks
+    checks = doc.get("checks") or []
+    for chk in checks:
+        chk_data = chk if isinstance(chk, dict) else (chk.model_dump() if hasattr(chk, "model_dump") else {})
+        field = chk_data.get("field", "")
+        name = chk_data.get("name", field)
+        chk_status = chk_data.get("status", "SKIP")
+        detail = chk_data.get("detail") or ""
+        stages.append({
+            "stage": f"check_{field}",
+            "label": f"{name} Validation",
+            "status": chk_status,
+            "detail": detail,
+        })
+
+    # Final verdict
+    stages.append({
+        "stage": "final_verdict",
+        "label": "Final Verdict",
+        "status": doc.get("status", "UNKNOWN"),
+        "detail": f"Confidence: {doc.get('confidence_score', 0)}%",
+    })
+
+    return stages
+
+
+import logging as _logging
+logger = _logging.getLogger("medverify.admin")

@@ -312,6 +312,14 @@ export async function getAdminReports(): Promise<VerificationReport[]> {
   return apiFetch<VerificationReport[]>('/api/admin/reports');
 }
 
+export async function getAdminInvestigation(
+  verificationId: string,
+): Promise<import('../types').VerificationInvestigation> {
+  return apiFetch<import('../types').VerificationInvestigation>(
+    `/api/admin/investigation/${verificationId}`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------

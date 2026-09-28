@@ -255,6 +255,27 @@ button {
   background-color: var(--color-notfound-dot);
 }
 
+/* Expired */
+.status-badge--expired {
+  background-color: #fff1f2;
+  border-color: #fecdd3;
+  color: #9f1239;
+}
+.status-badge--expired .status-badge__dot {
+  background-color: #e11d48;
+  box-shadow: 0 0 0 2px rgba(225, 29, 72, 0.2);
+}
+
+/* Neutral fallback */
+.status-badge--neutral {
+  background-color: var(--color-slate-100);
+  border-color: var(--color-border-subtle);
+  color: var(--color-slate-600);
+}
+.status-badge--neutral .status-badge__dot {
+  background-color: var(--color-slate-400);
+}
+
 /* ----------------------------------------------------------------
    4. BUTTONS & CONTROLS
    ---------------------------------------------------------------- */

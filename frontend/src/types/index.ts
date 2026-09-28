@@ -4,7 +4,7 @@
 
 /* ---- Verification ---- */
 
-export type VerificationStatus = 'VERIFIED' | 'REVIEW' | 'SUSPICIOUS' | 'NOT_FOUND';
+export type VerificationStatus = 'VERIFIED' | 'REVIEW' | 'SUSPICIOUS' | 'NOT_FOUND' | 'EXPIRED' | 'REQUIRES_REVIEW' | 'INVALID';
 
 export type VerificationMethod = 'QR' | 'DATAMATRIX' | 'BARCODE' | 'PACKAGING_OCR' | 'MANUAL' | 'NFC';
 
@@ -237,3 +237,35 @@ export interface SystemHealthData {
     system_users: number;
   };
 }
+
+/* ---- Admin Investigation ---- */
+
+export interface PipelineStage {
+  stage: string;
+  label: string;
+  status: string;
+  detail: string;
+}
+
+export interface VerificationInvestigation extends VerificationResult {
+  pipeline_events: Record<string, any>[];
+  pipeline_stages: PipelineStage[];
+}
+
+/* ---- Admin Reports ---- */
+
+export type ReportType =
+  | 'VERIFICATION_CONCERN'
+  | 'PACKAGING_DEFECT'
+  | 'EXPIRED_PRODUCT'
+  | 'SUSPICIOUS_SELLER'
+  | 'BATCH_NOT_RECOGNIZED'
+  | 'MANUFACTURER_MISMATCH'
+  | 'PRODUCT_MISMATCH'
+  | 'EXPIRY_MISMATCH'
+  | 'SERIAL_MISMATCH'
+  | 'SUSPICIOUS_PACKAGING'
+  | 'INCORRECT_BARCODE'
+  | 'TAMPERED_SEAL'
+  | 'ADVERSE_REACTION'
+  | 'OTHER';
