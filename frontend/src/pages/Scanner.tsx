@@ -35,7 +35,7 @@ export default function Scanner() {
   const [mode, setMode] = useState<ScannerMode>(() => {
     if (location.search.includes('mode=packaging')) return 'packaging';
     if (location.search.includes('mode=manual')) return 'manual';
-    if (location.search.includes('mode=demo')) return 'demo';
+    if (isAdmin && location.search.includes('mode=demo')) return 'demo';
     return 'camera';
   });
   const [isVerifying, setIsVerifying] = useState(false);
@@ -157,6 +157,20 @@ export default function Scanner() {
   // Pipeline stepper state
   const currentStep = verificationResult ? 4 : isVerifying ? 3 : mode === 'camera' ? 1 : 2;
 
+  const pipelineSteps = isAdmin
+    ? [
+        { num: '01', label: 'Optical Capture', step: 1 },
+        { num: '02', label: 'GS1 Normalization', step: 2 },
+        { num: '03', label: 'Registry Cross-Check', step: 3 },
+        { num: '04', label: 'Cryptographic Verdict', step: 4 },
+      ]
+    : [
+        { num: '01', label: 'Scan Packaging', step: 1 },
+        { num: '02', label: 'Read Code Details', step: 2 },
+        { num: '03', label: 'Checking Medicine Details', step: 3 },
+        { num: '04', label: 'Verification Result', step: 4 },
+      ];
+
   return (
     <motion.div
       variants={pageVariants}
@@ -167,12 +181,7 @@ export default function Scanner() {
     >
       {/* 1. Precision Pipeline Step Tracker */}
       <div className="scanner-pipeline-stepper" role="navigation" aria-label="Verification Pipeline Steps">
-        {[
-          { num: '01', label: 'Optical Capture', step: 1 },
-          { num: '02', label: 'GS1 Normalization', step: 2 },
-          { num: '03', label: 'Registry Cross-Check', step: 3 },
-          { num: '04', label: 'Cryptographic Verdict', step: 4 },
-        ].map((st) => {
+        {pipelineSteps.map((st) => {
           const isDone = currentStep > st.step;
           const isCurrent = currentStep === st.step;
 
@@ -216,7 +225,7 @@ export default function Scanner() {
                   disabled={isVerifying}
                 >
                   <ScanLine size={15} />
-                  <span>Optical Camera Scan</span>
+                  <span>{isAdmin ? 'Optical Camera Scan' : 'Scan Code'}</span>
                   {mode === 'camera' && (
                     <motion.div
                       layoutId="scannerModeTab"
@@ -238,7 +247,7 @@ export default function Scanner() {
                   disabled={isVerifying}
                 >
                   <Camera size={15} />
-                  <span>Packaging OCR</span>
+                  <span>{isAdmin ? 'Packaging OCR' : 'Scan Packaging'}</span>
                   {mode === 'packaging' && (
                     <motion.div
                       layoutId="scannerModeTab"
@@ -260,7 +269,7 @@ export default function Scanner() {
                   disabled={isVerifying}
                 >
                   <Keyboard size={15} />
-                  <span>Manual Payload Entry</span>
+                  <span>{isAdmin ? 'Manual Payload Entry' : 'Enter Details Manually'}</span>
                   {mode === 'manual' && (
                     <motion.div
                       layoutId="scannerModeTab"
@@ -270,27 +279,29 @@ export default function Scanner() {
                   )}
                 </button>
 
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={mode === 'demo'}
-                  className={`scanner-mode-btn ${mode === 'demo' ? 'is-active' : ''}`}
-                  onClick={() => {
-                    setMode('demo');
-                    setError(null);
-                  }}
-                  disabled={isVerifying}
-                >
-                  <Sparkles size={15} />
-                  <span>Benchmark Scenarios</span>
-                  {mode === 'demo' && (
-                    <motion.div
-                      layoutId="scannerModeTab"
-                      className="scanner-mode-active-pill"
-                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={mode === 'demo'}
+                    className={`scanner-mode-btn ${mode === 'demo' ? 'is-active' : ''}`}
+                    onClick={() => {
+                      setMode('demo');
+                      setError(null);
+                    }}
+                    disabled={isVerifying}
+                  >
+                    <Sparkles size={15} />
+                    <span>Benchmark Scenarios</span>
+                    {mode === 'demo' && (
+                      <motion.div
+                        layoutId="scannerModeTab"
+                        className="scanner-mode-active-pill"
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                      />
+                    )}
+                  </button>
+                )}
               </div>
 
               {/* Error Notice */}

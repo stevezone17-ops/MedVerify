@@ -22,7 +22,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // If this route strictly requires admin role and current user is not admin
   if (requiredRole === 'admin' && user?.role !== 'admin') {
     console.warn(`[ProtectedRoute] Access denied: User ${user?.email} with role '${user?.role}' attempted to access admin route.`);
-    return <Navigate to="/app" replace />;
+    return <Navigate to="/verify" replace />;
   }
 
   return <>{children}</>;

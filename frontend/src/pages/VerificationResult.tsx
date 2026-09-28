@@ -30,7 +30,7 @@ import {
   Keyboard,
   Sparkles,
 } from 'lucide-react';
-import { getVerification, addToCabinet, submitReport } from '../api/client';
+import { getVerification, addToCabinet, submitReport, getStoredUser } from '../api/client';
 import type { VerificationResult as VResult, VerificationCheck, VerificationStatus } from '../types';
 import { ConfidenceRing } from '../components/ui/ConfidenceRing';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -101,6 +101,8 @@ const STATUS_HERO: Record<
 export default function VerificationResultPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const user = getStoredUser();
+  const isAdmin = user?.role === 'admin';
   const [result, setResult] = useState<VResult | null>((location.state as any)?.result || null);
   const [loading, setLoading] = useState(!result);
   const [error, setError] = useState('');
@@ -211,7 +213,7 @@ export default function VerificationResultPage() {
         <p className="empty-state__description">
           {error || 'The requested verification token could not be located in the audit ledger.'}
         </p>
-        <Link to="/app/scanner" className="btn btn-primary">
+        <Link to={isAdmin ? "/admin/scanner" : "/verify"} className="btn btn-primary">
           <ScanLine size={16} />
           <span>Scan New Medicine</span>
         </Link>
@@ -243,9 +245,9 @@ export default function VerificationResultPage() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <Link to="/app/scanner" className="btn btn-secondary btn-sm">
+          <Link to={isAdmin ? "/admin/scanner" : "/verify"} className="btn btn-secondary btn-sm">
             <ArrowLeft size={14} />
-            <span>Return to Scanner</span>
+            <span>{isAdmin ? 'Return to Forensic Scanner' : 'Return to Scanner'}</span>
           </Link>
           <span style={{ color: 'var(--color-slate-300)' }}>/</span>
           <span

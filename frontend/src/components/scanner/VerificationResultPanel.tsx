@@ -30,7 +30,7 @@ import type { VerificationResult, VerificationCheck } from '../../types';
 import { StatusBadge } from '../ui/StatusBadge';
 import { Link } from '../../router';
 import { staggerContainer, staggerItem } from '../../animations/motion';
-import { addToCabinet, submitReport } from '../../api/client';
+import { addToCabinet, submitReport, getStoredUser } from '../../api/client';
 import { ExplainResultModal } from '../ai/ExplainResultModal';
 import { AskMedVerifyDrawer } from '../ai/AskMedVerifyDrawer';
 
@@ -45,6 +45,9 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
   onScanAnother,
   className = '',
 }) => {
+  const user = getStoredUser();
+  const isAdmin = user?.role === 'admin';
+
   const isVerified = result.status === 'VERIFIED';
   const isSuspicious = result.status === 'SUSPICIOUS';
   const isReview = result.status === 'REVIEW' || result.status === 'REQUIRES_REVIEW';
@@ -259,7 +262,9 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
       {/* 6-Factor Verification Checks Breakdown */}
       <div className="result-section">
         <div className="checks-header-row">
-          <h4 className="result-section-heading">Multi-Factor Cryptographic Checks</h4>
+          <h4 className="result-section-heading">
+            {isAdmin ? 'Multi-Factor Cryptographic Checks' : 'Packaging & Safety Integrity Checks'}
+          </h4>
           <span className="checks-counter font-mono">
             {checks.filter((c) => c.status === 'PASS').length} of {checks.length} Verified
           </span>
@@ -356,12 +361,12 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
         </button>
 
         <Link
-          to={`/app/result/${result.verification_id}`}
+          to={isAdmin ? `/admin/result/${result.verification_id}` : `/result/${result.verification_id}`}
           className="btn btn-secondary btn-lg result-action-btn"
           state={{ result }}
         >
           <FileText size={16} />
-          <span>Full Forensic Dossier</span>
+          <span>{isAdmin ? 'Full Forensic Dossier' : 'Verification Details'}</span>
           <ExternalLink size={14} />
         </Link>
       </div>

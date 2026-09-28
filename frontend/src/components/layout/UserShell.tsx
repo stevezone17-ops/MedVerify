@@ -29,33 +29,27 @@ interface NavItem {
 
 const USER_NAV_ITEMS: NavItem[] = [
   {
-    id: 'home',
-    label: 'Home',
-    to: '/app',
-    icon: Shield,
-  },
-  {
-    id: 'scanner',
-    label: 'Verify Medicine',
-    to: '/app/scanner',
+    id: 'verify',
+    label: 'VERIFY MEDICINE',
+    to: '/verify',
     icon: ScanLine,
   },
   {
-    id: 'cabinet',
-    label: 'Medicine Cabinet',
-    to: '/app/cabinet',
-    icon: Package,
-  },
-  {
-    id: 'history',
-    label: 'My Activity',
-    to: '/app/history',
+    id: 'activity',
+    label: 'MY ACTIVITY',
+    to: '/activity',
     icon: HistoryIcon,
   },
   {
+    id: 'cabinet',
+    label: 'MY MEDICINES',
+    to: '/cabinet',
+    icon: Package,
+  },
+  {
     id: 'how-it-works',
-    label: 'How It Works',
-    to: '/app/how-it-works',
+    label: 'HOW IT WORKS',
+    to: '/how-it-works',
     icon: HelpCircle,
   },
 ];
@@ -77,8 +71,22 @@ export const UserShell: React.FC = () => {
   };
 
   const isActive = (to: string) => {
-    if (to === '/app') {
-      return location.pathname === '/app' || location.pathname === '/app/';
+    if (to === '/verify') {
+      return (
+        location.pathname === '/verify' ||
+        location.pathname.startsWith('/verify/') ||
+        location.pathname === '/app' ||
+        location.pathname === '/app/scanner'
+      );
+    }
+    if (to === '/activity') {
+      return location.pathname === '/activity' || location.pathname === '/app/history';
+    }
+    if (to === '/cabinet') {
+      return location.pathname === '/cabinet' || location.pathname === '/app/cabinet';
+    }
+    if (to === '/how-it-works') {
+      return location.pathname === '/how-it-works' || location.pathname === '/app/how-it-works';
     }
     return location.pathname.startsWith(to);
   };
@@ -89,13 +97,13 @@ export const UserShell: React.FC = () => {
       <header className="user-shell-header">
         <div className="user-shell-header-content">
           <div className="user-shell-brand-group">
-            <NavLink to="/app" className="user-shell-logo-link">
+            <NavLink to="/verify" className="user-shell-logo-link">
               <div className="user-shell-logo-mark">
                 <Shield size={20} className="user-shell-logo-icon" />
               </div>
               <div className="user-shell-logo-text">
                 <span className="user-shell-logo-title">MedVerify</span>
-                <span className="user-shell-logo-subtitle">Medicine Authentication</span>
+                <span className="user-shell-logo-subtitle">Verify your medicine with confidence</span>
               </div>
             </NavLink>
 
@@ -130,8 +138,26 @@ export const UserShell: React.FC = () => {
             })}
           </nav>
 
-          {/* Right Action Items: User Profile & Logout */}
+          {/* Right Action Items: Scan Medicine, Ask AI, User Profile & Logout */}
           <div className="user-shell-actions">
+            <NavLink
+              to="/verify/scan"
+              className="btn btn-primary btn-sm user-shell-scan-btn"
+              title="Launch Camera Scanner"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '7px 14px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: 600,
+              }}
+            >
+              <ScanLine size={15} />
+              <span>Scan Medicine</span>
+            </NavLink>
+
             <button
               onClick={() => setAskMedVerifyOpen(true)}
               className="user-shell-ai-btn"
@@ -148,7 +174,7 @@ export const UserShell: React.FC = () => {
               </NavLink>
             )}
 
-            <NavLink to="/app/profile" className="user-shell-user-pill">
+            <NavLink to="/profile" className="user-shell-user-pill">
               <div className="user-shell-avatar">
                 {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
               </div>
@@ -157,6 +183,7 @@ export const UserShell: React.FC = () => {
                 <span className="user-shell-user-role">Personal Account</span>
               </div>
             </NavLink>
+
 
             <button
               onClick={handleLogout}
@@ -209,7 +236,7 @@ export const UserShell: React.FC = () => {
                 <div className="user-shell-mobile-divider" />
 
                 <NavLink
-                  to="/app/profile"
+                  to="/profile"
                   onClick={() => setMobileMenuOpen(false)}
                   className="user-shell-mobile-nav-link"
                 >

@@ -89,7 +89,7 @@ const ADMIN_NAV_GROUPS: NavGroup[] = [
       {
         id: 'system',
         label: 'System Health',
-        to: '/admin/system',
+        to: '/admin/system-health',
         icon: Activity,
       },
     ],
@@ -210,7 +210,7 @@ export const AdminShell: React.FC = () => {
 
         {/* Sidebar Footer with Account Switcher & Sign Out */}
         <div className="admin-shell-sidebar-footer">
-          <NavLink to="/app" className="admin-shell-user-mode-link" title="Open Consumer Verification Portal">
+          <NavLink to="/verify" className="admin-shell-user-mode-link" title="Open Consumer Verification Portal">
             <ScanLine size={14} />
             <span>Open Consumer Portal</span>
           </NavLink>
@@ -289,8 +289,9 @@ export const AdminShell: React.FC = () => {
               <kbd>Ctrl K</kbd>
             </button>
 
-            <NavLink to="/app" className="admin-shell-portal-btn">
-              <span>User Mode</span>
+            <NavLink to="/verify" className="admin-shell-portal-btn" title="Open Consumer Verification Portal">
+              <ScanLine size={13} />
+              <span>Open Consumer Portal</span>
             </NavLink>
           </div>
         </header>
