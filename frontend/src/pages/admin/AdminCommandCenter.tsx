@@ -20,6 +20,7 @@ import {
   ShieldAlert,
   Camera,
   Keyboard,
+  Sparkles,
 } from 'lucide-react';
 import { getAnalytics, getAdminSystemHealth, getAdminMedicines } from '../../api/client';
 import type { AnalyticsData, Medicine, VerificationListItem, VerificationStatus, SystemHealthData } from '../../types';
@@ -35,12 +36,14 @@ import ForensicCertificatePanel from '../../components/ui/ForensicCertificatePan
 import InspectionDrawer from '../../components/ui/InspectionDrawer';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import StatusBadge from '../../components/ui/StatusBadge';
+import AdminAIAnalystModal from '../../components/ai/AdminAIAnalystModal';
 
 export const AdminCommandCenter: React.FC = () => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [health, setHealth] = useState<SystemHealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isAnalystOpen, setIsAnalystOpen] = useState(false);
 
   // Active filter for Event Timeline from Investigations Queue
   const [activeFilter, setActiveFilter] = useState<'ALL' | VerificationStatus>('ALL');
@@ -106,6 +109,16 @@ export const AdminCommandCenter: React.FC = () => {
 
         <div className="command-center-header-actions">
           <button
+            type="button"
+            onClick={() => setIsAnalystOpen(true)}
+            className="command-center-ai-btn"
+            title="Launch AI Verification Analyst for automated trend synthesis"
+          >
+            <Sparkles size={14} className="text-amber-400" />
+            <span>AI Analyst</span>
+          </button>
+
+          <button
             onClick={handleRefresh}
             disabled={isRefreshing}
             className="command-center-refresh-btn"
@@ -122,56 +135,74 @@ export const AdminCommandCenter: React.FC = () => {
         </div>
       </div>
 
-      {/* Global Operational KPI Cards */}
+      {/* Global Operational KPI Cards — 5 Real Dashboard Cards */}
       <div className="command-center-kpi-grid">
+        {/* 1. TOTAL VERIFICATIONS */}
         <div className="command-kpi-card">
           <div className="command-kpi-header">
             <span className="command-kpi-label">TOTAL VERIFICATIONS</span>
-            <Activity size={16} className="command-kpi-icon" />
+            <Activity size={18} className="command-kpi-icon" />
           </div>
           <div className="command-kpi-val">
             <AnimatedNumber value={total} />
           </div>
           <div className="command-kpi-sub">
-            <span>{analytics?.active_medicines || 10} Active Catalog Items</span>
+            <span>System-Wide Scans</span>
           </div>
         </div>
 
+        {/* 2. ACTIVE CATALOG ITEMS */}
+        <div className="command-kpi-card catalog">
+          <div className="command-kpi-header">
+            <span className="command-kpi-label">ACTIVE CATALOG ITEMS</span>
+            <Package size={18} className="command-kpi-icon catalog" />
+          </div>
+          <div className="command-kpi-val catalog">
+            <AnimatedNumber value={analytics?.active_medicines || 10} />
+          </div>
+          <div className="command-kpi-sub catalog">
+            <span>Authorized Formulas</span>
+          </div>
+        </div>
+
+        {/* 3. VERIFIED SPECIMENS */}
         <div className="command-kpi-card verified">
           <div className="command-kpi-header">
             <span className="command-kpi-label">VERIFIED SPECIMENS</span>
-            <ShieldCheck size={16} className="command-kpi-icon verified" />
+            <ShieldCheck size={18} className="command-kpi-icon verified" />
           </div>
           <div className="command-kpi-val verified">
             <AnimatedNumber value={verifiedCount} />
           </div>
-          <div className="command-kpi-sub">
-            <span>{verifiedRate}% Authentic Compliance</span>
+          <div className="command-kpi-sub verified">
+            <span>Authentic Compliance <strong>{verifiedRate}%</strong></span>
           </div>
         </div>
 
+        {/* 4. REVIEW REQUIRED */}
         <div className="command-kpi-card review">
           <div className="command-kpi-header">
             <span className="command-kpi-label">REVIEW REQUIRED</span>
-            <AlertTriangle size={16} className="command-kpi-icon review" />
+            <AlertTriangle size={18} className="command-kpi-icon review" />
           </div>
           <div className="command-kpi-val review">
             <AnimatedNumber value={reviewCount} />
           </div>
-          <div className="command-kpi-sub">
-            <span>Expired / Incomplete payloads</span>
+          <div className="command-kpi-sub review">
+            <span>Expired / Incomplete Payloads</span>
           </div>
         </div>
 
+        {/* 5. CRITICAL ANOMALIES */}
         <div className="command-kpi-card suspicious">
           <div className="command-kpi-header">
             <span className="command-kpi-label">CRITICAL ANOMALIES</span>
-            <ShieldAlert size={16} className="command-kpi-icon suspicious" />
+            <ShieldAlert size={18} className="command-kpi-icon suspicious" />
           </div>
           <div className="command-kpi-val suspicious">
             <AnimatedNumber value={suspiciousCount + notFoundCount} />
           </div>
-          <div className="command-kpi-sub">
+          <div className="command-kpi-sub suspicious">
             <span>{suspiciousCount} Suspicious · {notFoundCount} Unregistered</span>
           </div>
         </div>
@@ -298,6 +329,12 @@ export const AdminCommandCenter: React.FC = () => {
         isOpen={isDrawerOpen}
         item={selectedInspection}
         onClose={() => setIsDrawerOpen(false)}
+      />
+
+      {/* AI Verification Analyst Modal */}
+      <AdminAIAnalystModal
+        isOpen={isAnalystOpen}
+        onClose={() => setIsAnalystOpen(false)}
       />
     </motion.div>
   );
