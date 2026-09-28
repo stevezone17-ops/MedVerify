@@ -59,23 +59,26 @@ counterfeit_medicine_verification_md/
 │   │   │   ├── supabase_client.py    # Supabase connection manager
 │   │   │   ├── storage.py            # Packaging evidence storage
 │   │   │   └── repositories/         # Profiles, Medicines, Batches, Verifications
-│   │   ├── routes/                   # Verification, User, History, Admin, Reports
+│   │   ├── routes/                   # Verification, User, History, Admin, Reports, AI
 │   │   ├── schemas/                  # Pydantic data contracts
-│   │   ├── services/                 # Verification Engine, GS1 Parser, Scoring
+│   │   ├── services/                 # Verification Engine, GS1 Parser, Scoring, LLM Service
+│   │   │   └── llm/                  # OpenAI client, prompts, schemas, service
 │   │   └── utils/                    # Timezone & ISO-8601 UTC utilities
 │   ├── scripts/
 │   │   ├── migrate_mongodb_to_supabase.py # Production migration utility
 │   │   └── seed_supabase.py               # Development seed script
-│   └── tests/                        # Full test suite (29 tests)
+│   └── tests/                        # Full test suite (45 tests including AI test suite)
 ├── frontend/
 │   ├── src/
-│   │   ├── api/                      # Centralized API client
-│   │   ├── components/               # Scanner, Badges, Modals, Results
+│   │   ├── api/                      # Centralized API client (including AI endpoints)
+│   │   ├── components/               # Scanner, Badges, Modals, Results, AI Components
+│   │   │   └── ai/                   # ExplainResultModal, AskMedVerifyDrawer, AdminAIAnalystModal
 │   │   ├── lib/                      # Supabase client & Realtime subscriber
-│   │   ├── pages/                    # Home, Scanner, History, Admin Dashboard
+│   │   ├── pages/                    # Home, Scanner, History, Admin Dashboard, Result
 │   │   └── utils/                    # Barcode decoding & date utilities
 ├── supabase/
-│   └── migrations/                   # 001 Schema, 002 Indexes, 003 RLS, 004 Functions
+│   └── migrations/                   # 001-004 Core Schema, 005 AI Conversations
+├── AI_ARCHITECTURE.md                # Comprehensive LLM intelligence layer specification
 ├── SUPABASE_MIGRATION_PLAN.md        # Comprehensive migration blueprint
 ├── SUPABASE_SETUP.md                 # Supabase configuration guide
 └── README.md
@@ -83,11 +86,27 @@ counterfeit_medicine_verification_md/
 
 ---
 
+## Phase 3 — Real LLM Intelligence Layer
+
+MedVerify features a production OpenAI intelligence layer:
+- **Provider**: Official OpenAI API (`openai>=1.50.0`)
+- **Default Model**: Configurable via `OPENAI_MODEL` (default: `gpt-5.6-luna`)
+- **Strict Grounding**: The deterministic verification engine remains authoritative; the LLM explains verified facts without altering status or inventing records.
+- **Explain My Result**: Plain-language multi-lingual explanation with Simple vs Technical tones.
+- **Ask MedVerify**: Interactive chat assistant with healthcare safety boundaries and prompt injection defense.
+- **OCR AI Normalization**: Intelligent packaging text normalization without hallucinating missing fields.
+- **Admin AI Analyst**: High-level verification anomaly synthesis for authorized administrators.
+- **Critical Failsafe**: Core verification, camera scanning, and database operations work 100% even if the LLM is offline.
+
+For detailed design specifications, see [AI_ARCHITECTURE.md](./AI_ARCHITECTURE.md).
+
+---
+
 ## Getting Started
 
 ### 1. Database Setup
 
-Follow [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) to apply the 4 SQL migrations located in `supabase/migrations/`.
+Follow [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) to apply the SQL migrations located in `supabase/migrations/`.
 
 ### 2. Backend Setup
 
@@ -102,10 +121,11 @@ python -m venv .venv
 # Install dependencies
 pip install -r requirements.txt
 
+# Configure environment variables (add OPENAI_API_KEY, OPENAI_MODEL)
+cp .env.example .env
+
 # Start backend server
 uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
-# Or alternately from backend directory:
-# uvicorn main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 ### 3. Frontend Setup
@@ -123,7 +143,7 @@ Visit [http://localhost:5173](http://localhost:5173) in your browser.
 ## Testing
 
 ```bash
-# Run backend test suite
+# Run backend test suite (45 tests)
 cd backend
 pytest
 

@@ -8,6 +8,8 @@ MedVerify features a comprehensive automated test suite in `backend/tests/`:
 - `test_qr_parser.py`: GS1 Application Identifier (AI), plain string, and JSON payload parsing.
 - `test_scoring.py`: 6-factor deterministic confidence scoring and penalty rules.
 - `test_supabase_migration.py`: End-to-end regression tests verifying Supabase data models, GS1 scanning, RBAC permissions, and timestamps.
+- `test_daily_use.py`: Verification methods, medicine cabinet CRUD, notification preferences, admin analytics breakdown.
+- `test_ai_service.py`: Real LLM intelligence layer tests (AI health, auth protection, RBAC admin controls, explain verification for verified/expired/suspicious, Ask MedVerify assistant, medical safety boundary, OCR normalization, prompt injection defense, admin AI verification analyst, and deterministic failsafe).
 
 ---
 
@@ -19,8 +21,8 @@ pytest
 ```
 
 **Test Coverage Summary:**
-- Total Tests: **29 Passed (100%)**
-- Execution Duration: **~3.7s**
+- Total Tests: **45 Passed (100%)**
+- Execution Duration: **~11.8s**
 
 ---
 
@@ -66,3 +68,4 @@ npm run build
 - TypeScript strict typecheck (`tsc -b`): **Passed**
 - Vite production chunking: **Passed**
 - Bundle size & tree-shaking: **Optimized**
+

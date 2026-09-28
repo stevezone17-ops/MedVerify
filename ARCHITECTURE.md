@@ -110,3 +110,41 @@ Supabase Realtime Broadcast to Admin Command Center
                      ↓
   Explainable Verdict & Certificate to User
 ```
+
+---
+
+## 5. Real LLM Intelligence Layer
+
+```text
+                               ┌───────────────────────────────────────┐
+                               │ Deterministic Verification Verdict    │
+                               │ (VERIFIED / SUSPICIOUS / EXPIRED)     │
+                               └──────────────────┬────────────────────┘
+                                                  │
+                                                  ▼
+                               ┌───────────────────────────────────────┐
+                               │    FastAPI Grounded Context Builder   │
+                               └──────────────────┬────────────────────┘
+                                                  │
+                                                  ▼
+                               ┌───────────────────────────────────────┐
+                               │   OpenAI Responses API (Configurable) │
+                               │   Default: gpt-5.6-luna (JSON-Schema) │
+                               └──────────────────┬────────────────────┘
+                                                  │
+                      ┌───────────────────────────┴───────────────────────────┐
+                      ▼                                                       ▼
+        ┌──────────────────────────┐                            ┌──────────────────────────┐
+        │   Explain My Result      │                            │   Ask MedVerify Assistant│
+        │   (Multilingual & Tone)  │                            │   (Grounded Interactive) │
+        └──────────────────────────┘                            └──────────────────────────┘
+```
+
+1. **Grounded Explanation Layer**: The LLM is strictly an explanation and interaction layer; it is never the authenticity decision engine.
+2. **Configurable Model**: Configured via `OPENAI_MODEL` environment variable (default: `gpt-5.6-luna`).
+3. **Medical Safety Boundary**: Strict guardrails disallowing medical diagnosis, dosage advice, or prescription decisions.
+4. **Prompt Injection Defense**: Packaging OCR text and user questions are quarantined as untrusted data blocks.
+5. **Critical Failsafe**: Core verification continues working 100% when OpenAI is offline or unconfigured.
+
+See [AI_ARCHITECTURE.md](./AI_ARCHITECTURE.md) for full architectural specifications.
+

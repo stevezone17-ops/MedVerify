@@ -357,3 +357,53 @@ export function getStoredUser(): import('../types').User | null {
 export function isAuthenticated(): boolean {
   return !!localStorage.getItem('medverify_token');
 }
+
+// ---------------------------------------------------------------------------
+// MedVerify Real LLM Intelligence Layer APIs
+// ---------------------------------------------------------------------------
+
+export async function getAIHealth(): Promise<import('../types').AIHealthResponse> {
+  return apiFetch<import('../types').AIHealthResponse>('/api/ai/health');
+}
+
+export async function explainVerification(data: {
+  verification_id: string;
+  style?: 'simple' | 'technical';
+  language?: string;
+}): Promise<import('../types').VerificationExplanation> {
+  return apiFetch<import('../types').VerificationExplanation>('/api/ai/explain-verification', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function askMedVerify(data: {
+  question: string;
+  verification_id?: string;
+  conversation_id?: string;
+  language?: string;
+}): Promise<import('../types').AskMedVerifyResponse> {
+  return apiFetch<import('../types').AskMedVerifyResponse>('/api/ai/chat', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function normalizeOCR(data: {
+  raw_text: string;
+}): Promise<import('../types').OCRNormalizedCandidate> {
+  return apiFetch<import('../types').OCRNormalizedCandidate>('/api/ai/normalize-ocr', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function adminAIAnalyze(data: {
+  query: string;
+  time_range?: string;
+}): Promise<import('../types').AdminAIAnalyzeResponse> {
+  return apiFetch<import('../types').AdminAIAnalyzeResponse>('/api/admin/ai/analyze', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}

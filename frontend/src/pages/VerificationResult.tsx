@@ -28,12 +28,15 @@ import {
   X,
   Camera,
   Keyboard,
+  Sparkles,
 } from 'lucide-react';
 import { getVerification, addToCabinet, submitReport } from '../api/client';
 import type { VerificationResult as VResult, VerificationCheck, VerificationStatus } from '../types';
 import { ConfidenceRing } from '../components/ui/ConfidenceRing';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { pageVariants, staggerContainer, staggerItem } from '../animations/motion';
+import { ExplainResultModal } from '../components/ai/ExplainResultModal';
+import { AskMedVerifyDrawer } from '../components/ai/AskMedVerifyDrawer';
 
 const STATUS_HERO: Record<
   VerificationStatus,
@@ -113,6 +116,11 @@ export default function VerificationResultPage() {
   const [reportType, setReportType] = useState('SUSPICIOUS_PACKAGING');
   const [reportDesc, setReportDesc] = useState('');
   const [reportErr, setReportErr] = useState('');
+
+  // AI Intelligence Layer States
+  const [explainModalOpen, setExplainModalOpen] = useState(false);
+  const [askDrawerOpen, setAskDrawerOpen] = useState(false);
+  const [initialAiQuestion, setInitialAiQuestion] = useState<string | undefined>();
 
   useEffect(() => {
     if (!result && id) {
@@ -249,6 +257,41 @@ export default function VerificationResultPage() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+          {/* Explain My Result Button */}
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => setExplainModalOpen(true)}
+            style={{
+              background: 'linear-gradient(135deg, #0d9488 0%, #0284c7 100%)',
+              borderColor: 'transparent',
+              color: '#ffffff',
+              boxShadow: '0 2px 8px rgba(13, 148, 136, 0.25)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+            title="Get an AI forensic explanation of this verification"
+          >
+            <Sparkles size={13} />
+            <span>Explain My Result</span>
+          </button>
+
+          {/* Ask MedVerify Assistant */}
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => {
+              setInitialAiQuestion(undefined);
+              setAskDrawerOpen(true);
+            }}
+            title="Ask questions about this medicine or GS1 verification"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Sparkles size={13} style={{ color: 'var(--color-primary-600)' }} />
+            <span>Ask MedVerify</span>
+          </button>
+
           {/* Cabinet Button */}
           <button
             type="button"
@@ -735,6 +778,27 @@ export default function VerificationResultPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* MedVerify AI — Explain My Result Modal */}
+      {result && (
+        <ExplainResultModal
+          isOpen={explainModalOpen}
+          onClose={() => setExplainModalOpen(false)}
+          verificationId={result.verification_id}
+          onOpenChatWithContext={(vid, q) => {
+            setInitialAiQuestion(q);
+            setAskDrawerOpen(true);
+          }}
+        />
+      )}
+
+      {/* MedVerify AI — Ask MedVerify Assistant Drawer */}
+      <AskMedVerifyDrawer
+        isOpen={askDrawerOpen}
+        onClose={() => setAskDrawerOpen(false)}
+        verificationId={result?.verification_id}
+        initialQuestion={initialAiQuestion}
+      />
     </motion.div>
   );
 }

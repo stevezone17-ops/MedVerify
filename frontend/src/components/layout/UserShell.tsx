@@ -14,9 +14,11 @@ import {
   ExternalLink,
   CheckCircle2,
   Lock,
+  Sparkles,
 } from 'lucide-react';
 import { getStoredUser, logout } from '../../api/client';
 import type { User } from '../../types';
+import { AskMedVerifyDrawer } from '../ai/AskMedVerifyDrawer';
 
 interface NavItem {
   id: string;
@@ -61,6 +63,7 @@ const USER_NAV_ITEMS: NavItem[] = [
 export const UserShell: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [askMedVerifyOpen, setAskMedVerifyOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -129,6 +132,15 @@ export const UserShell: React.FC = () => {
 
           {/* Right Action Items: User Profile & Logout */}
           <div className="user-shell-actions">
+            <button
+              onClick={() => setAskMedVerifyOpen(true)}
+              className="user-shell-ai-btn"
+              title="Ask MedVerify AI Assistant"
+            >
+              <Sparkles size={14} className="text-amber-400" />
+              <span>Ask AI</span>
+            </button>
+
             {user?.role === 'admin' && (
               <NavLink to="/admin" className="user-shell-admin-switch-btn" title="Switch to Admin Command Center">
                 <Lock size={13} />
@@ -250,6 +262,25 @@ export const UserShell: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {/* Floating Ask MedVerify AI Button */}
+      <motion.button
+        onClick={() => setAskMedVerifyOpen(true)}
+        className="floating-ai-trigger"
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        title="Ask MedVerify AI Assistant"
+        aria-label="Open Ask MedVerify Assistant"
+      >
+        <Sparkles size={18} className="text-amber-400" />
+        <span className="floating-ai-text">Ask MedVerify</span>
+      </motion.button>
+
+      {/* Ask MedVerify Slide-over Assistant */}
+      <AskMedVerifyDrawer
+        isOpen={askMedVerifyOpen}
+        onClose={() => setAskMedVerifyOpen(false)}
+      />
     </div>
   );
 };

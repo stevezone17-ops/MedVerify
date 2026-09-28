@@ -195,3 +195,120 @@
 - **PATCH** `/api/admin/users/{user_id}/status`: Activate or disable account.
 - **PATCH** `/api/admin/users/{user_id}/role`: Update role (`user` / `admin`).
 - **GET** `/api/admin/reports`: List all user concern reports.
+
+---
+
+## 8. Real LLM Intelligence Endpoints
+
+### 8.1 AI Health
+- **GET** `/api/ai/health`
+- **Response (200 OK):**
+  ```json
+  {
+    "available": true,
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "rate_limit_per_minute": 10
+  }
+  ```
+
+### 8.2 Explain My Result
+- **POST** `/api/ai/explain-verification`
+- **Headers:** `Authorization: Bearer <token>`
+- **Request Body:**
+  ```json
+  {
+    "verification_id": "vrf_53c709af05d0",
+    "status": "VERIFIED",
+    "product_name": "Amoxicillin 500 mg Capsules",
+    "manufacturer": "PharmaCore Laboratories",
+    "gtin": "89012345678901",
+    "batch_number": "BATCH-2026-001",
+    "serial_number": "SER-PC-000001",
+    "expiry_date": "2028-01-09",
+    "tone": "simple",
+    "language": "en"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "summary": "MedVerify found a registered product matching the scanned GTIN...",
+    "what_was_checked": ["GS1 GTIN", "Batch Number", "Expiration Date"],
+    "matched_evidence": ["Product identifier matches PharmaCore Laboratories"],
+    "concerns": [],
+    "next_steps": ["Inspect physical tamper-evident seal before consumption."],
+    "disclaimer": "MedVerify is a digital verification service, not medical advice.",
+    "tone": "simple",
+    "language": "en",
+    "model_used": "gpt-5.6-luna"
+  }
+  ```
+
+### 8.3 Ask MedVerify Assistant
+- **POST** `/api/ai/chat`
+- **Headers:** `Authorization: Bearer <token>`
+- **Request Body:**
+  ```json
+  {
+    "message": "Why was my medicine flagged as suspicious?",
+    "verification_id": "vrf_53c709af05d0",
+    "conversation_id": null
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "reply": "Your scanned medicine has an unknown batch number not present in the manufacturer registry...",
+    "conversation_id": "conv_4c99b82",
+    "grounded_facts": ["Batch BATCH-2026-999 is unlisted"],
+    "safety_notice": "Do not consume unverified medications. Consult your pharmacist."
+  }
+  ```
+
+### 8.4 Packaging OCR Normalization
+- **POST** `/api/ai/normalize-ocr`
+- **Headers:** `Authorization: Bearer <token>`
+- **Request Body:**
+  ```json
+  {
+    "raw_text": "AMOXICILIN 500 MG CAPS BATCH-2026-001 EXP 2028-01-09",
+    "confidence_score": 0.88
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "medicine_name": "Amoxicillin",
+    "strength": "500 mg",
+    "dosage_form": "Capsules",
+    "batch_number": "BATCH-2026-001",
+    "expiry_date": "2028-01-09",
+    "gtin": null,
+    "serial_number": null,
+    "manufacturer": null,
+    "confidence_notes": ["Identified active ingredient and dosage form."]
+  }
+  ```
+
+### 8.5 Admin AI Verification Analyst (Admin Only)
+- **POST** `/api/admin/ai/analyze`
+- **Headers:** `Authorization: Bearer <admin_token>`
+- **Request Body:**
+  ```json
+  {
+    "time_range": "24h",
+    "inquiry": "Summarize today's verification activity and anomalies."
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "executive_summary": "Verification activity across the last 24 hours shows 147 scans with 19 suspicious detections...",
+    "key_findings": ["19 batch mismatches detected from distributor region 4"],
+    "risk_assessment": "Moderate counterfeit attempt on Amoxicillin batches",
+    "recommended_actions": ["Flag BATCH-2026-999 for quarantine inspection"],
+    "metrics_analyzed": { "total_scans": 147, "anomaly_rate": 12.9 }
+  }
+  ```
+

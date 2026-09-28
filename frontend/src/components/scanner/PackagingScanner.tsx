@@ -12,7 +12,9 @@ import {
   Loader2,
   Check,
   X,
+  Sparkles,
 } from 'lucide-react';
+import { normalizeOCR } from '../../api/client';
 
 interface ExtractedField {
   key: string;
@@ -42,6 +44,11 @@ export const PackagingScanner: React.FC<PackagingScannerProps> = ({ onVerify, is
   const [extractedFields, setExtractedFields] = useState<ExtractedField[]>([]);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
+
+  // AI OCR Normalization State
+  const [rawOcrText, setRawOcrText] = useState<string>('');
+  const [normalizingWithAi, setNormalizingWithAi] = useState(false);
+  const [aiNotes, setAiNotes] = useState<string[]>([]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -137,6 +144,7 @@ export const PackagingScanner: React.FC<PackagingScannerProps> = ({ onVerify, is
       });
 
       const text = data.text || '';
+      setRawOcrText(text);
       const lines = text.split('\n').map((l: string) => l.trim()).filter(Boolean);
       const fields = parseOCRText(lines, text);
 
@@ -151,6 +159,35 @@ export const PackagingScanner: React.FC<PackagingScannerProps> = ({ onVerify, is
       setStep('PREVIEW');
     }
   }, [capturedImage]);
+
+  const handleAiNormalize = async () => {
+    if (!rawOcrText) return;
+    setNormalizingWithAi(true);
+    try {
+      const normalized = await normalizeOCR({ raw_text: rawOcrText });
+      setEditValues((prev) => {
+        const next = { ...prev };
+        if (normalized.medicine_name) {
+          next.product_name = normalized.strength
+            ? `${normalized.medicine_name} ${normalized.strength}`
+            : normalized.medicine_name;
+        }
+        if (normalized.manufacturer) next.manufacturer = normalized.manufacturer;
+        if (normalized.gtin) next.gtin = normalized.gtin;
+        if (normalized.batch_number) next.batch_number = normalized.batch_number;
+        if (normalized.serial_number) next.serial_number = normalized.serial_number;
+        if (normalized.expiry_date) next.expiry_date = normalized.expiry_date;
+        return next;
+      });
+      if (normalized.confidence_notes && normalized.confidence_notes.length > 0) {
+        setAiNotes(normalized.confidence_notes);
+      }
+    } catch (err: any) {
+      console.warn('AI OCR normalization error:', err);
+    } finally {
+      setNormalizingWithAi(false);
+    }
+  };
 
   const handleFieldChange = (key: string, value: string) => {
     setEditValues((prev) => ({ ...prev, [key]: value }));
@@ -329,13 +366,44 @@ export const PackagingScanner: React.FC<PackagingScannerProps> = ({ onVerify, is
             className="packaging-step"
           >
             <div className="packaging-review-header">
-              <div className="packaging-review-badge">
-                <Edit3 size={14} />
-                <span>Detected from packaging</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: '8px' }}>
+                <div className="packaging-review-badge">
+                  <Edit3 size={14} />
+                  <span>Detected from packaging</span>
+                </div>
+
+                {/* AI Smart Normalization Button */}
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleAiNormalize}
+                  disabled={normalizingWithAi || !rawOcrText}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  title="Use MedVerify AI to normalize medicine names and extract missing standard codes"
+                >
+                  {normalizingWithAi ? (
+                    <>
+                      <Loader2 size={13} className="telemetry-spinner" />
+                      <span>Normalizing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={13} style={{ color: 'var(--color-primary-600)' }} />
+                      <span>AI Smart Normalization</span>
+                    </>
+                  )}
+                </button>
               </div>
-              <p className="packaging-review-note">
+
+              <p className="packaging-review-note" style={{ marginTop: '8px' }}>
                 Please review and correct any errors before verifying against the registry.
               </p>
+
+              {aiNotes.length > 0 && (
+                <div style={{ marginTop: '8px', padding: '6px 12px', background: '#f0fdfa', border: '1px solid #ccfbf1', borderRadius: '6px', fontSize: '11px', color: '#0f766e' }}>
+                  <strong>AI Normalization:</strong> {aiNotes.join('; ')}
+                </div>
+              )}
             </div>
 
             {capturedImage && (

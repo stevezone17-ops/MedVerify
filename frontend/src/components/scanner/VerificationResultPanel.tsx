@@ -24,12 +24,15 @@ import {
   Send,
   X,
   Flag,
+  Sparkles,
 } from 'lucide-react';
 import type { VerificationResult, VerificationCheck } from '../../types';
 import { StatusBadge } from '../ui/StatusBadge';
 import { Link } from '../../router';
 import { staggerContainer, staggerItem } from '../../animations/motion';
 import { addToCabinet, submitReport } from '../../api/client';
+import { ExplainResultModal } from '../ai/ExplainResultModal';
+import { AskMedVerifyDrawer } from '../ai/AskMedVerifyDrawer';
 
 interface VerificationResultPanelProps {
   result: VerificationResult;
@@ -68,6 +71,11 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
   const [reportDesc, setReportDesc] = useState('');
   const [submittingReport, setSubmittingReport] = useState(false);
   const [reportSuccess, setReportSuccess] = useState(false);
+
+  // AI Intelligence Layer States
+  const [explainModalOpen, setExplainModalOpen] = useState(false);
+  const [askDrawerOpen, setAskDrawerOpen] = useState(false);
+  const [initialAiQuestion, setInitialAiQuestion] = useState<string | undefined>();
 
   const handleSaveToCabinet = async () => {
     setSavingCabinet(true);
@@ -290,6 +298,23 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
 
       {/* Action Footer */}
       <div className="result-actions-footer">
+        {/* Explain My Result Button */}
+        <button
+          type="button"
+          className="btn btn-primary btn-lg result-action-btn"
+          onClick={() => setExplainModalOpen(true)}
+          style={{
+            background: 'linear-gradient(135deg, #0d9488 0%, #0284c7 100%)',
+            borderColor: 'transparent',
+            color: '#ffffff',
+            boxShadow: '0 2px 8px rgba(13, 148, 136, 0.25)',
+          }}
+          title="Explain verification outcome using MedVerify AI"
+        >
+          <Sparkles size={16} />
+          <span>Explain My Result</span>
+        </button>
+
         {/* If verified or expired: Add to Medicine Cabinet */}
         {(isVerified || isExpired) && (
           <button
@@ -447,6 +472,25 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* MedVerify AI — Explain Result Modal */}
+      <ExplainResultModal
+        isOpen={explainModalOpen}
+        onClose={() => setExplainModalOpen(false)}
+        verificationId={result.verification_id}
+        onOpenChatWithContext={(vid, q) => {
+          setInitialAiQuestion(q);
+          setAskDrawerOpen(true);
+        }}
+      />
+
+      {/* MedVerify AI — Ask MedVerify Assistant Drawer */}
+      <AskMedVerifyDrawer
+        isOpen={askDrawerOpen}
+        onClose={() => setAskDrawerOpen(false)}
+        verificationId={result.verification_id}
+        initialQuestion={initialAiQuestion}
+      />
     </motion.div>
   );
 };

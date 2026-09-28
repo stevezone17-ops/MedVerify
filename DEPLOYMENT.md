@@ -44,6 +44,14 @@ JWT_EXPIRY_MINUTES=60
 
 # Allowed CORS Origins (Do NOT use "*" in production)
 FRONTEND_URL=https://medverify.yourdomain.com
+
+# OpenAI LLM Intelligence Layer
+OPENAI_API_KEY=<your-production-openai-api-key>
+OPENAI_MODEL=gpt-5.6-luna
+OPENAI_MAX_OUTPUT_TOKENS=800
+OPENAI_TIMEOUT_SECONDS=20
+OPENAI_RATE_LIMIT_PER_MINUTE=10
+OPENAI_ADMIN_RATE_LIMIT_PER_MINUTE=30
 ```
 
 ### Frontend Environment Variables (`frontend/.env`)

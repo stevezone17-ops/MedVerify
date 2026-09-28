@@ -269,3 +269,60 @@ export type ReportType =
   | 'TAMPERED_SEAL'
   | 'ADVERSE_REACTION'
   | 'OTHER';
+
+/* ---- MedVerify AI Intelligence Layer ---- */
+
+export type ExplanationStyle = 'simple' | 'technical';
+
+export interface VerificationExplanation {
+  summary: string;
+  what_was_checked: string[];
+  matched_evidence: string[];
+  concerns: string[];
+  next_steps: string[];
+  disclaimer: string;
+  style: string;
+  language: string;
+  model_used: string;
+  verification_id: string;
+  status: string;
+  confidence_score: number;
+}
+
+export interface AskMedVerifyResponse {
+  answer: string;
+  grounded_facts: string[];
+  verification_referenced?: string | null;
+  safety_notice: string;
+  conversation_id: string;
+  model_used: string;
+}
+
+export interface OCRNormalizedCandidate {
+  medicine_name?: string | null;
+  manufacturer?: string | null;
+  gtin?: string | null;
+  batch_number?: string | null;
+  serial_number?: string | null;
+  expiry_date?: string | null;
+  strength?: string | null;
+  dosage_form?: string | null;
+  confidence_notes: string[];
+}
+
+export interface AdminAIAnalyzeResponse {
+  summary: string;
+  key_findings: string[];
+  risk_assessment: string;
+  actionable_recommendations: string[];
+  metrics_analyzed: Record<string, any>;
+  model_used: string;
+}
+
+export interface AIHealthResponse {
+  available: boolean;
+  provider: string;
+  model: string;
+  reason?: string | null;
+}
+

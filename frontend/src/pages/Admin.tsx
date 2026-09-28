@@ -16,11 +16,13 @@ import {
   AlertTriangle,
   QrCode,
   Package,
+  Sparkles,
 } from 'lucide-react';
 import { getAnalytics, getAdminMedicines, deleteMedicine } from '../api/client';
 import type { AnalyticsData, Medicine, VerificationListItem, VerificationStatus } from '../types';
 import { pageVariants, fadeUp, staggerContainer } from '../animations/motion';
 import { Link } from '../router';
+import AdminAIAnalystModal from '../components/ai/AdminAIAnalystModal';
 
 /* Redesigned Command Center Components */
 import HealthGauge from '../components/ui/HealthGauge';
@@ -44,6 +46,9 @@ export default function Admin() {
   // Selected item for slide-over Inspection Drawer
   const [selectedInspection, setSelectedInspection] = useState<VerificationListItem | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // AI Verification Analyst Modal
+  const [isAnalystOpen, setIsAnalystOpen] = useState(false);
 
   // Registry search query
   const [registryQuery, setRegistryQuery] = useState('');
@@ -140,6 +145,26 @@ export default function Admin() {
           </p>
 
           <div className="command-header-actions">
+            {/* AI Verification Analyst Button */}
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setIsAnalystOpen(true)}
+              style={{
+                background: 'linear-gradient(135deg, #b45309 0%, #d97706 100%)',
+                borderColor: 'transparent',
+                color: '#ffffff',
+                boxShadow: '0 2px 8px rgba(180, 83, 9, 0.25)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+              title="Launch AI Verification Analyst for automated trend synthesis"
+            >
+              <Sparkles size={13} />
+              <span>AI Verification Analyst</span>
+            </button>
+
             <button
               type="button"
               className="btn btn-secondary btn-sm"
@@ -357,6 +382,12 @@ export default function Admin() {
         item={selectedInspection}
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
+      />
+
+      {/* AI Verification Analyst Modal */}
+      <AdminAIAnalystModal
+        isOpen={isAnalystOpen}
+        onClose={() => setIsAnalystOpen(false)}
       />
     </motion.div>
   );
