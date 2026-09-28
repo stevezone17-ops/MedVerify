@@ -42,31 +42,39 @@ function normalizeError(err: unknown): NormalizedError {
     if (isNet) {
       return {
         title: 'VERIFICATION SERVICE UNAVAILABLE',
-        message: 'Unable to connect to the MedVerify verification service. Check that the API server is running.',
+        message: 'Verification service is currently unavailable. Please check that the API server is running on port 8001.',
       };
     }
 
     const status = (err as any).status;
-    const msg = err.message.toLowerCase();
+    const msg = (err.message || '').trim();
+    const msgLower = msg.toLowerCase();
 
-    // 404 on endpoint
-    if (status === 404 || msg.includes('404') || msg.includes('not found')) {
+    // 401 or invalid credentials
+    if (
+      status === 401 ||
+      msgLower.includes('401') ||
+      msgLower.includes('invalid') ||
+      msgLower.includes('unauthorized') ||
+      msgLower.includes('incorrect') ||
+      msgLower.includes('credentials')
+    ) {
       return {
-        title: 'VERIFICATION SERVICE UNAVAILABLE',
-        message: 'Unable to connect to the MedVerify verification service. Check that the API server is running.',
+        title: 'AUTHENTICATION FAILED',
+        message: 'Invalid email or password.',
       };
     }
 
-    // 401 or invalid credentials
-    if (status === 401 || msg.includes('401') || msg.includes('invalid') || msg.includes('unauthorized')) {
+    // 404 on endpoint
+    if (status === 404 || msgLower.includes('404') || msgLower.includes('not found')) {
       return {
-        title: 'AUTHENTICATION FAILED',
-        message: 'Incorrect email or password.',
+        title: 'SERVICE UNAVAILABLE',
+        message: 'Verification service endpoint not found.',
       };
     }
 
     // 409 conflict
-    if (status === 409 || msg.includes('409') || msg.includes('already registered')) {
+    if (status === 409 || msgLower.includes('409') || msgLower.includes('already registered')) {
       return {
         title: 'REGISTRATION CONFLICT',
         message: 'An account with this email address already exists.',
@@ -74,25 +82,30 @@ function normalizeError(err: unknown): NormalizedError {
     }
 
     // 422 validation
-    if (status === 422 || msg.includes('422')) {
+    if (status === 422 || msgLower.includes('422')) {
       return {
         title: 'AUTHENTICATION FAILED',
-        message: 'Please enter a valid work email address and password.',
+        message: msg || 'Please enter a valid work email address and password.',
       };
     }
 
     // 500 or other server errors
-    if (status >= 500 || msg.includes('500') || msg.includes('internal')) {
+    if (status >= 500 || msgLower.includes('500') || msgLower.includes('internal')) {
       return {
         title: 'AUTHENTICATION ERROR',
         message: 'The verification service returned an unexpected response.',
       };
     }
+
+    return {
+      title: 'AUTHENTICATION FAILED',
+      message: msg || 'Invalid email or password.',
+    };
   }
 
   return {
     title: 'AUTHENTICATION ERROR',
-    message: 'The verification service returned an unexpected response.',
+    message: 'An unexpected error occurred during authentication.',
   };
 }
 

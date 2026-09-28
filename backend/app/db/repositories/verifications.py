@@ -359,13 +359,23 @@ class VerificationsRepository:
                 total_medicines = med_res.count or 0
                 active_medicines = sum(1 for m in (med_res.data or []) if m.get("status") == "active")
 
-                # Get status breakdown
-                v_all = client.table("verification_records").select("verification_status, created_at").execute()
-                statuses = [r["verification_status"] for r in (v_all.data or [])]
+                # Get status and method breakdown
+                v_all = client.table("verification_records").select("verification_status, verification_method, created_at").execute()
+                rows = v_all.data or []
+                statuses = [r.get("verification_status") for r in rows]
                 v_count = statuses.count("VERIFIED")
                 r_count = statuses.count("REVIEW")
                 s_count = statuses.count("SUSPICIOUS")
                 nf_count = statuses.count("NOT_FOUND")
+
+                methods = [(r.get("verification_method") or "QR").upper() for r in rows]
+                method_counts = {
+                    "QR": methods.count("QR"),
+                    "DATAMATRIX": methods.count("DATAMATRIX"),
+                    "BARCODE": methods.count("BARCODE"),
+                    "PACKAGING_OCR": methods.count("PACKAGING_OCR"),
+                    "MANUAL": methods.count("MANUAL"),
+                }
 
                 anomaly_total = s_count + nf_count
                 anomaly_rate = round((anomaly_total / total_v * 100), 1) if total_v > 0 else 0.0
@@ -380,6 +390,7 @@ class VerificationsRepository:
                         "status": row.get("verification_status", ""),
                         "confidence_score": row.get("confidence", 0),
                         "product_name": med.get("product_name") or row.get("gtin"),
+                        "verification_method": row.get("verification_method", "QR"),
                         "created_at": to_iso_utc(row.get("created_at")),
                         "user_name": row.get("user_name"),
                         "user_email": row.get("user_email"),
@@ -396,6 +407,7 @@ class VerificationsRepository:
                         "SUSPICIOUS": s_count,
                         "NOT_FOUND": nf_count,
                     },
+                    "method_breakdown": method_counts,
                     "recent_verifications": recent,
                 }
             except Exception as exc:
@@ -410,9 +422,19 @@ class VerificationsRepository:
         pipeline = [{"$group": {"_id": "$status", "count": {"$sum": 1}}}]
         status_counts = {d["_id"]: d["count"] for d in verifications_col().aggregate(pipeline)}
 
+        method_pipeline = [{"$group": {"_id": "$verification_method", "count": {"$sum": 1}}}]
+        raw_methods = {str(d["_id"] or "QR").upper(): d["count"] for d in verifications_col().aggregate(method_pipeline)}
+        method_counts = {
+            "QR": raw_methods.get("QR", 0),
+            "DATAMATRIX": raw_methods.get("DATAMATRIX", 0),
+            "BARCODE": raw_methods.get("BARCODE", 0),
+            "PACKAGING_OCR": raw_methods.get("PACKAGING_OCR", 0),
+            "MANUAL": raw_methods.get("MANUAL", 0),
+        }
+
         recent = list(
             verifications_col()
-            .find({}, {"_id": 1, "status": 1, "confidence_score": 1, "raw_identifier": 1, "created_at": 1, "medicine": 1, "user_name": 1, "user_email": 1})
+            .find({}, {"_id": 1, "status": 1, "confidence_score": 1, "raw_identifier": 1, "verification_method": 1, "created_at": 1, "medicine": 1, "user_name": 1, "user_email": 1})
             .sort("created_at", -1)
             .limit(12)
         )
@@ -436,6 +458,7 @@ class VerificationsRepository:
                 "SUSPICIOUS": suspicious_count,
                 "NOT_FOUND": not_found_count,
             },
+            "method_breakdown": method_counts,
             "recent_verifications": recent,
         }
 

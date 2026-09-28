@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User as UserIcon,
   Mail,
@@ -10,28 +10,60 @@ import {
   Key,
   ShieldAlert,
   ArrowRight,
+  Bell,
+  BellRing,
+  AlertTriangle,
+  Check,
+  Loader2,
 } from 'lucide-react';
 import { useNavigate, Link } from '../../router';
-import { getUserProfile, logout, getStoredUser } from '../../api/client';
-import type { UserProfile as UserProfileType } from '../../types';
+import {
+  getUserProfile,
+  logout,
+  getStoredUser,
+  getNotificationPreferences,
+  updateNotificationPreferences,
+} from '../../api/client';
+import type { UserProfile as UserProfileType, NotificationPreferences } from '../../types';
 
 export const UserProfile: React.FC = () => {
   const [profile, setProfile] = useState<UserProfileType | null>(null);
   const [loading, setLoading] = useState(true);
+  const [prefs, setPrefs] = useState<NotificationPreferences | null>(null);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState(false);
   const storedUser = getStoredUser();
   const navigate = useNavigate();
 
   useEffect(() => {
-    getUserProfile()
-      .then((p) => {
+    Promise.all([getUserProfile(), getNotificationPreferences()])
+      .then(([p, n]) => {
         setProfile(p);
+        setPrefs(n);
         setLoading(false);
       })
       .catch((e) => {
-        console.error('Failed to load profile:', e);
+        console.error('Failed to load profile data:', e);
         setLoading(false);
       });
   }, []);
+
+  const handleUpdatePref = async (key: keyof NotificationPreferences, value: any) => {
+    if (!prefs) return;
+    const updated = { ...prefs, [key]: value };
+    setPrefs(updated);
+    setSavingPrefs(true);
+    setSavedSuccess(false);
+    try {
+      await updateNotificationPreferences({ [key]: value });
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to update notification preferences:', err);
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
 
   const handleSignOut = () => {
     logout();
@@ -133,6 +165,70 @@ export const UserProfile: React.FC = () => {
               <span>View My History Log</span>
               <ArrowRight size={14} />
             </Link>
+          </div>
+
+          {/* Expiry Reminders & Alert Preferences */}
+          <div className="user-profile-notifications-card">
+            <div className="user-profile-sec-head">
+              <Bell size={18} />
+              <h4>Safety & Expiry Alerts</h4>
+              {savedSuccess && (
+                <span className="pref-saved-pill">
+                  <Check size={12} />
+                  <span>Saved</span>
+                </span>
+              )}
+              {savingPrefs && (
+                <Loader2 size={14} className="telemetry-spinner pref-saving-spinner" />
+              )}
+            </div>
+            <p className="pref-card-desc">
+              Manage proactive notifications for expired medicines in your cabinet and critical counterfeit alerts.
+            </p>
+
+            <div className="pref-item-list">
+              <label className="pref-toggle-row">
+                <div className="pref-toggle-info">
+                  <span className="pref-title">Email Expiry Reminders</span>
+                  <span className="pref-sub">Receive email alerts before medicines in your cabinet expire</span>
+                </div>
+                <input
+                  type="checkbox"
+                  className="pref-checkbox"
+                  checked={prefs?.email_alerts ?? true}
+                  onChange={(e) => handleUpdatePref('email_alerts', e.target.checked)}
+                />
+              </label>
+
+              <label className="pref-toggle-row">
+                <div className="pref-toggle-info">
+                  <span className="pref-title">Urgent Recall Warnings</span>
+                  <span className="pref-sub">Immediate notification if a verified medicine is recalled</span>
+                </div>
+                <input
+                  type="checkbox"
+                  className="pref-checkbox"
+                  checked={prefs?.recall_alerts ?? true}
+                  onChange={(e) => handleUpdatePref('recall_alerts', e.target.checked)}
+                />
+              </label>
+
+              <div className="pref-select-row">
+                <div className="pref-toggle-info">
+                  <span className="pref-title">Expiry Advance Notice</span>
+                  <span className="pref-sub">How far ahead to remind you</span>
+                </div>
+                <select
+                  className="pref-select"
+                  value={prefs?.expiry_reminder_days ?? 14}
+                  onChange={(e) => handleUpdatePref('expiry_reminder_days', parseInt(e.target.value, 10))}
+                >
+                  <option value={7}>7 days before</option>
+                  <option value={14}>14 days before</option>
+                  <option value={30}>30 days before</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           <div className="user-profile-security-card">

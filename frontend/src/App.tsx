@@ -16,6 +16,7 @@ import VerificationResult from './pages/VerificationResult';
 
 /* User Role Pages */
 import UserHome from './pages/user/UserHome';
+import UserCabinet from './pages/user/UserCabinet';
 import UserHistory from './pages/user/UserHistory';
 import HowItWorks from './pages/user/HowItWorks';
 import UserProfile from './pages/user/UserProfile';
@@ -51,6 +52,7 @@ export default function App() {
           >
             <Route index element={<UserHome />} />
             <Route path="scanner" element={<Scanner />} />
+            <Route path="cabinet" element={<UserCabinet />} />
             <Route path="history" element={<UserHistory />} />
             <Route path="how-it-works" element={<HowItWorks />} />
             <Route path="profile" element={<UserProfile />} />

@@ -36,6 +36,11 @@ class VerifyRequest(BaseModel):
     manufacturer: Optional[str] = None
     product_name: Optional[str] = None
     expiry_date: Optional[str] = None
+    method: Optional[str] = Field(
+        "QR",
+        pattern="^(QR|DATAMATRIX|BARCODE|PACKAGING_OCR|MANUAL|NFC)$",
+        description="Verification input method",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -43,14 +48,15 @@ class VerifyRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 class VerificationResult(BaseModel):
-    """Full verification result returned by the API and stored in MongoDB."""
+    """Full verification result returned by the API and stored in the database."""
 
     verification_id: str
     input_type: str = "manual"
+    verification_method: str = "QR"
     raw_identifier: str
     parsed_data: dict = {}
     matched_medicine_id: Optional[str] = None
-    status: str  # VERIFIED | REVIEW | SUSPICIOUS | NOT_FOUND
+    status: str  # VERIFIED | REVIEW | SUSPICIOUS | NOT_FOUND | EXPIRED | REQUIRES_REVIEW
     confidence_score: int
     checks: list[VerificationCheck] = []
     issues: list[str] = []
@@ -76,6 +82,8 @@ class VerificationListItem(BaseModel):
     confidence_score: int
     product_name: Optional[str] = None
     manufacturer: Optional[str] = None
+    batch_number: Optional[str] = None
+    verification_method: Optional[str] = None
     created_at: Optional[datetime] = None
 
     @field_validator("created_at", mode="before")

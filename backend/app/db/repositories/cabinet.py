@@ -28,6 +28,10 @@ class CabinetRepository:
             "verification_id": data.get("verification_id"),
             "nickname": data.get("nickname"),
             "notes": data.get("notes"),
+            "expiry_date": data.get("expiry_date"),
+            "product_name": data.get("product_name"),
+            "manufacturer": data.get("manufacturer"),
+            "batch_number": data.get("batch_number"),
             "reminder_enabled": data.get("reminder_enabled", False),
             "created_at": to_iso_utc(now),
             "updated_at": to_iso_utc(now),
@@ -56,13 +60,39 @@ class CabinetRepository:
         client = get_supabase_client()
         if client:
             try:
-                res = client.table("medicine_cabinet").select("*, medicines(*)").eq("user_id", user_id).order("created_at", desc=True).execute()
+                res = client.table("medicine_cabinet").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
                 if res.data:
                     return res.data
             except Exception as exc:
                 logger.warning("Supabase list_user_cabinet failed: %s", exc)
 
         return [c for c in _cabinet_store if c.get("user_id") == user_id]
+
+    def update(self, cabinet_id: str, user_id: str, updates: dict[str, Any]) -> Optional[dict[str, Any]]:
+        """Update a cabinet entry's nickname, notes, or reminder settings."""
+        updates["updated_at"] = to_iso_utc(datetime.now(timezone.utc))
+
+        client = get_supabase_client()
+        if client:
+            try:
+                res = (
+                    client.table("medicine_cabinet")
+                    .update(updates)
+                    .eq("id", cabinet_id)
+                    .eq("user_id", user_id)
+                    .execute()
+                )
+                if res.data:
+                    return res.data[0]
+            except Exception as exc:
+                logger.warning("Supabase cabinet update failed: %s", exc)
+
+        # Local fallback
+        for c in _cabinet_store:
+            if c.get("id") == cabinet_id and c.get("user_id") == user_id:
+                c.update(updates)
+                return c
+        return None
 
     def remove(self, cabinet_id: str, user_id: str) -> bool:
         """Remove a medicine from user's cabinet."""

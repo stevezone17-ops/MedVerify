@@ -6,6 +6,8 @@
 
 export type VerificationStatus = 'VERIFIED' | 'REVIEW' | 'SUSPICIOUS' | 'NOT_FOUND';
 
+export type VerificationMethod = 'QR' | 'DATAMATRIX' | 'BARCODE' | 'PACKAGING_OCR' | 'MANUAL' | 'NFC';
+
 export interface VerificationCheck {
   name: string;
   field: string;
@@ -19,6 +21,7 @@ export interface VerificationCheck {
 export interface VerificationResult {
   verification_id: string;
   input_type: string;
+  verification_method: VerificationMethod;
   raw_identifier: string;
   parsed_data: Record<string, string>;
   matched_medicine_id: string | null;
@@ -37,6 +40,8 @@ export interface VerificationListItem {
   confidence_score: number;
   product_name?: string;
   manufacturer?: string;
+  batch_number?: string;
+  verification_method?: VerificationMethod;
   created_at: string;
 }
 
@@ -55,6 +60,7 @@ export interface ManufacturerInfo {
 }
 
 export interface MedicineSummary {
+  product_identifier?: string;
   product_name: string;
   manufacturer: string;
   batch_number: string;
@@ -104,7 +110,9 @@ export interface AnalyticsData {
   total_medicines: number;
   active_medicines: number;
   total_verifications: number;
+  anomaly_rate?: number;
   status_breakdown: Record<VerificationStatus, number>;
+  method_breakdown?: Record<string, number>;
   recent_verifications: VerificationListItem[];
 }
 
@@ -117,6 +125,7 @@ export interface VerifyRequest {
   manufacturer?: string;
   product_name?: string;
   expiry_date?: string;
+  method?: VerificationMethod;
 }
 
 /* ---- User Specific ---- */
@@ -140,6 +149,47 @@ export interface UserProfile {
   created_at: string;
   total_verifications: number;
   last_activity: string | null;
+}
+
+/* ---- Medicine Cabinet ---- */
+
+export interface CabinetEntry {
+  id: string;
+  user_id: string;
+  medicine_id?: string;
+  verification_id?: string;
+  nickname?: string;
+  notes?: string;
+  expiry_date?: string;
+  product_name?: string;
+  manufacturer?: string;
+  batch_number?: string;
+  reminder_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/* ---- Notification Preferences ---- */
+
+export interface NotificationPreferences {
+  user_id: string;
+  email_alerts: boolean;
+  push_alerts: boolean;
+  recall_alerts: boolean;
+  verification_summaries: boolean;
+  expiry_reminder_days: number;
+}
+
+/* ---- Reports ---- */
+
+export interface VerificationReport {
+  id: string;
+  user_id: string;
+  verification_id?: string;
+  report_type: string;
+  description: string;
+  status: string;
+  created_at: string;
 }
 
 /* ---- Admin Specific ---- */
@@ -187,4 +237,3 @@ export interface SystemHealthData {
     system_users: number;
   };
 }
-

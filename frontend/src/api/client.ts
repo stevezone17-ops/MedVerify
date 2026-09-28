@@ -15,6 +15,9 @@ import type {
   Medicine,
   AuthResponse,
   AnalyticsData,
+  CabinetEntry,
+  NotificationPreferences,
+  VerificationReport,
 } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -142,6 +145,83 @@ export async function getUserRecent(limit = 5): Promise<{ recent: any[] }> {
 }
 
 // ---------------------------------------------------------------------------
+// Medicine Cabinet
+// ---------------------------------------------------------------------------
+
+export async function getCabinet(): Promise<CabinetEntry[]> {
+  return apiFetch<CabinetEntry[]>('/api/user/cabinet');
+}
+
+export async function addToCabinet(data: {
+  medicine_id?: string;
+  verification_id?: string;
+  nickname?: string;
+  notes?: string;
+  expiry_date?: string;
+  product_name?: string;
+  manufacturer?: string;
+  batch_number?: string;
+  reminder_enabled?: boolean;
+}): Promise<CabinetEntry> {
+  return apiFetch<CabinetEntry>('/api/user/cabinet', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateCabinetEntry(
+  id: string,
+  data: { nickname?: string; notes?: string; reminder_enabled?: boolean },
+): Promise<CabinetEntry> {
+  return apiFetch<CabinetEntry>(`/api/user/cabinet/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function removeCabinetEntry(id: string): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(`/api/user/cabinet/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Notification Preferences
+// ---------------------------------------------------------------------------
+
+export async function getNotificationPreferences(): Promise<NotificationPreferences> {
+  return apiFetch<NotificationPreferences>('/api/user/notifications/preferences');
+}
+
+export async function updateNotificationPreferences(
+  data: Partial<NotificationPreferences>,
+): Promise<NotificationPreferences> {
+  return apiFetch<NotificationPreferences>('/api/user/notifications/preferences', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+
+export async function submitReport(data: {
+  verification_id?: string;
+  report_type?: string;
+  description: string;
+}): Promise<VerificationReport> {
+  return apiFetch<VerificationReport>('/api/reports', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getMyReports(): Promise<VerificationReport[]> {
+  return apiFetch<VerificationReport[]>('/api/user/reports');
+}
+
+// ---------------------------------------------------------------------------
 // Admin Scoped APIs
 // ---------------------------------------------------------------------------
 
@@ -228,6 +308,10 @@ export async function getAdminSystemHealth(): Promise<import('../types').SystemH
   return apiFetch<import('../types').SystemHealthData>('/api/admin/system-health');
 }
 
+export async function getAdminReports(): Promise<VerificationReport[]> {
+  return apiFetch<VerificationReport[]>('/api/admin/reports');
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
@@ -265,4 +349,3 @@ export function getStoredUser(): import('../types').User | null {
 export function isAuthenticated(): boolean {
   return !!localStorage.getItem('medverify_token');
 }
-

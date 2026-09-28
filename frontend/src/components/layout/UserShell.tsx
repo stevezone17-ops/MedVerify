@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield,
   ScanLine,
+  Package,
   History as HistoryIcon,
   HelpCircle,
   User as UserIcon,
@@ -36,6 +37,12 @@ const USER_NAV_ITEMS: NavItem[] = [
     label: 'Verify Medicine',
     to: '/app/scanner',
     icon: ScanLine,
+  },
+  {
+    id: 'cabinet',
+    label: 'Medicine Cabinet',
+    to: '/app/cabinet',
+    icon: Package,
   },
   {
     id: 'history',

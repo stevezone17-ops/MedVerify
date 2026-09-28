@@ -18,6 +18,8 @@ import {
   Package,
   Users,
   ShieldAlert,
+  Camera,
+  Keyboard,
 } from 'lucide-react';
 import { getAnalytics, getAdminSystemHealth, getAdminMedicines } from '../../api/client';
 import type { AnalyticsData, Medicine, VerificationListItem, VerificationStatus, SystemHealthData } from '../../types';
@@ -200,7 +202,7 @@ export const AdminCommandCenter: React.FC = () => {
               <div className="infra-row-left">
                 <span className="infra-status-dot online" />
                 <div>
-                  <strong>MongoDB Database Cluster</strong>
+                  <strong>{health?.components?.database?.name ?? 'Supabase PostgreSQL'}</strong>
                   <p>Ping Latency: {health?.components?.database?.latency_ms ?? 20}ms</p>
                 </div>
               </div>
@@ -222,11 +224,30 @@ export const AdminCommandCenter: React.FC = () => {
               <div className="infra-row-left">
                 <span className="infra-status-dot online" />
                 <div>
-                  <strong>FastAPI Gateway</strong>
+                  <strong>FastAPI Core Gateway</strong>
                   <p>Environment: Production · v1.0.0</p>
                 </div>
               </div>
               <span className="infra-tag">HEALTHY</span>
+            </div>
+          </div>
+
+          {/* Verification Channel Distribution */}
+          <div className="command-channel-breakdown">
+            <span className="command-channel-title">INGESTION METHOD BREAKDOWN</span>
+            <div className="command-channel-chips">
+              <div className="channel-chip">
+                <ScanLine size={13} />
+                <span>QR / 2D DataMatrix: <strong>{analytics?.method_breakdown?.QR ?? 0}</strong></span>
+              </div>
+              <div className="channel-chip">
+                <Camera size={13} />
+                <span>Packaging OCR: <strong>{analytics?.method_breakdown?.PACKAGING_OCR ?? 0}</strong></span>
+              </div>
+              <div className="channel-chip">
+                <Keyboard size={13} />
+                <span>Manual Entry: <strong>{analytics?.method_breakdown?.MANUAL ?? 0}</strong></span>
+              </div>
             </div>
           </div>
         </div>

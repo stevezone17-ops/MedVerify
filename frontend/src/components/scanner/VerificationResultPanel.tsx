@@ -1,5 +1,5 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -15,11 +15,21 @@ import {
   FileText,
   Clock,
   ShieldAlert,
+  Package,
+  Check,
+  Loader2,
+  Camera,
+  ScanLine,
+  Keyboard,
+  Send,
+  X,
+  Flag,
 } from 'lucide-react';
 import type { VerificationResult, VerificationCheck } from '../../types';
 import { StatusBadge } from '../ui/StatusBadge';
 import { Link } from '../../router';
 import { staggerContainer, staggerItem } from '../../animations/motion';
+import { addToCabinet, submitReport } from '../../api/client';
 
 interface VerificationResultPanelProps {
   result: VerificationResult;
@@ -46,6 +56,78 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
 
   const checks = result.checks || [];
 
+  // Cabinet & Report state
+  const [cabinetSaved, setCabinetSaved] = useState(false);
+  const [savingCabinet, setSavingCabinet] = useState(false);
+  const [cabinetError, setCabinetError] = useState<string | null>(null);
+
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [reportType, setReportType] = useState('SUSPICIOUS_PACKAGING');
+  const [reportDesc, setReportDesc] = useState('');
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [reportSuccess, setReportSuccess] = useState(false);
+
+  const handleSaveToCabinet = async () => {
+    setSavingCabinet(true);
+    setCabinetError(null);
+    try {
+      await addToCabinet({
+        medicine_id: result.matched_medicine_id || undefined,
+        verification_id: result.verification_id,
+        product_name: productName,
+        manufacturer: mfrName,
+        batch_number: batchNum,
+        expiry_date: expiryDate,
+        reminder_enabled: true,
+      });
+      setCabinetSaved(true);
+    } catch (err: any) {
+      console.error('Failed to save to cabinet:', err);
+      setCabinetError(err.message || 'Failed to save to medicine cabinet');
+    } finally {
+      setSavingCabinet(false);
+    }
+  };
+
+  const handleSubmitConcern = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reportDesc.trim()) return;
+    setSubmittingReport(true);
+    try {
+      await submitReport({
+        verification_id: result.verification_id,
+        report_type: reportType,
+        description: reportDesc.trim(),
+      });
+      setReportSuccess(true);
+      setTimeout(() => {
+        setReportModalOpen(false);
+        setReportSuccess(false);
+        setReportDesc('');
+      }, 2000);
+    } catch (err: any) {
+      console.error('Failed to submit report:', err);
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
+  const getMethodIcon = () => {
+    const m = (result.verification_method || result.input_type || 'QR').toUpperCase();
+    if (m === 'PACKAGING_OCR') return <Camera size={12} />;
+    if (m === 'MANUAL') return <Keyboard size={12} />;
+    return <ScanLine size={12} />;
+  };
+
+  const getMethodLabel = () => {
+    const m = (result.verification_method || result.input_type || 'QR').toUpperCase();
+    if (m === 'PACKAGING_OCR') return 'Packaging OCR';
+    if (m === 'MANUAL') return 'Manual Entry';
+    if (m === 'DATAMATRIX') return 'GS1 DataMatrix';
+    if (m === 'BARCODE') return 'Barcode Scan';
+    return 'QR Code';
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.96, y: 12 }}
@@ -67,6 +149,10 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
               <StatusBadge status={result.status} size="lg" />
               <span className="result-confidence-pill">
                 {result.confidence_score}% Confidence
+              </span>
+              <span className="result-method-pill" title={`Verified via ${getMethodLabel()}`}>
+                {getMethodIcon()}
+                <span>{getMethodLabel()}</span>
               </span>
             </div>
             <p className="result-status-explanation">
@@ -198,6 +284,37 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
 
       {/* Action Footer */}
       <div className="result-actions-footer">
+        {/* If verified: Add to Medicine Cabinet */}
+        {isVerified && (
+          <button
+            type="button"
+            className={`btn btn-lg result-action-btn ${cabinetSaved ? 'btn-success' : 'btn-accent'}`}
+            onClick={handleSaveToCabinet}
+            disabled={savingCabinet || cabinetSaved}
+          >
+            {savingCabinet ? (
+              <Loader2 size={16} className="telemetry-spinner" />
+            ) : cabinetSaved ? (
+              <Check size={16} />
+            ) : (
+              <Package size={16} />
+            )}
+            <span>{cabinetSaved ? 'Saved to Cabinet' : savingCabinet ? 'Saving...' : 'Add to Cabinet'}</span>
+          </button>
+        )}
+
+        {/* If non-verified: Report Concern */}
+        {!isVerified && (
+          <button
+            type="button"
+            className="btn btn-warning btn-lg result-action-btn"
+            onClick={() => setReportModalOpen(true)}
+          >
+            <Flag size={16} />
+            <span>Report Concern</span>
+          </button>
+        )}
+
         <button
           type="button"
           className="btn btn-primary btn-lg result-action-btn"
@@ -217,6 +334,113 @@ export const VerificationResultPanel: React.FC<VerificationResultPanelProps> = (
           <ExternalLink size={14} />
         </Link>
       </div>
+
+      {/* Report Concern Modal */}
+      <AnimatePresence>
+        {reportModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="report-modal-backdrop"
+            onClick={() => setReportModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="report-modal-card"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="report-modal-header">
+                <div className="report-modal-icon-wrap">
+                  <ShieldAlert size={20} />
+                </div>
+                <div>
+                  <h3 className="report-modal-title">Report Pharmaceutical Anomaly</h3>
+                  <p className="report-modal-subtitle">
+                    Alert the safety authority regarding suspected counterfeit packaging or unverified medicine.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="report-modal-close"
+                  onClick={() => setReportModalOpen(false)}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {reportSuccess ? (
+                <div className="report-success-view">
+                  <CheckCircle2 size={42} className="report-success-icon" />
+                  <h4>Report Successfully Filed</h4>
+                  <p>
+                    Thank you. Your report has been logged with regulatory authorities for forensic review.
+                  </p>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmitConcern} className="report-modal-form">
+                  <div className="form-group">
+                    <label className="form-label">Type of Issue</label>
+                    <select
+                      className="form-select"
+                      value={reportType}
+                      onChange={(e) => setReportType(e.target.value)}
+                    >
+                      <option value="SUSPICIOUS_PACKAGING">Suspicious or Altered Packaging</option>
+                      <option value="INCORRECT_BARCODE">Barcode or DataMatrix Mismatch</option>
+                      <option value="EXPIRED_MEDICINE">Dispensed Expired Product</option>
+                      <option value="TAMPERED_SEAL">Broken or Tampered Security Seal</option>
+                      <option value="ADVERSE_REACTION">Unexpected Physical Characteristics</option>
+                      <option value="OTHER">Other Quality or Counterfeit Concern</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Description & Findings</label>
+                    <textarea
+                      className="form-textarea"
+                      rows={4}
+                      placeholder="Please describe where you obtained this medicine and what discrepancies you noticed (e.g., blurry text, different font, unsealed box)..."
+                      value={reportDesc}
+                      onChange={(e) => setReportDesc(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="report-modal-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setReportModalOpen(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={submittingReport || !reportDesc.trim()}
+                    >
+                      {submittingReport ? (
+                        <>
+                          <Loader2 size={15} className="telemetry-spinner" />
+                          <span>Submitting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send size={15} />
+                          <span>Submit Official Report</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

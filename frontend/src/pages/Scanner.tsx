@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ScanLine,
+  Camera,
   Keyboard,
   Sparkles,
   AlertTriangle,
@@ -14,16 +15,17 @@ import {
 import { useLocation } from '../router';
 import { verifyMedicine, getStoredUser } from '../api/client';
 import { pageVariants } from '../animations/motion';
-import type { VerificationResult } from '../types';
+import type { VerificationResult, VerificationMethod } from '../types';
 import { parseGS1Payload } from '../utils/gs1Parser';
 
 /* Modular Scanner Components */
 import CameraScanner from '../components/scanner/CameraScanner';
+import PackagingScanner from '../components/scanner/PackagingScanner';
 import ManualPayloadForm from '../components/scanner/ManualPayloadForm';
 import DemoScenarios, { DemoScenarioItem } from '../components/scanner/DemoScenarios';
 import VerificationResultPanel from '../components/scanner/VerificationResultPanel';
 
-type ScannerMode = 'camera' | 'manual' | 'demo';
+type ScannerMode = 'camera' | 'packaging' | 'manual' | 'demo';
 
 export default function Scanner() {
   const location = useLocation();
@@ -31,6 +33,7 @@ export default function Scanner() {
   const isAdmin = user?.role === 'admin';
 
   const [mode, setMode] = useState<ScannerMode>(() => {
+    if (location.search.includes('mode=packaging')) return 'packaging';
     if (location.search.includes('mode=manual')) return 'manual';
     if (location.search.includes('mode=demo')) return 'demo';
     return 'camera';
@@ -46,6 +49,9 @@ export default function Scanner() {
     batch_number?: string;
     serial_number?: string;
     expiry_date?: string;
+    product_name?: string;
+    manufacturer?: string;
+    method?: VerificationMethod;
   }) => {
     setError(null);
     setIsVerifying(true);
@@ -58,6 +64,9 @@ export default function Scanner() {
         batch_number: params.batch_number?.trim() || undefined,
         serial_number: params.serial_number?.trim() || undefined,
         expiry_date: params.expiry_date?.trim() || undefined,
+        product_name: params.product_name?.trim() || undefined,
+        manufacturer: params.manufacturer?.trim() || undefined,
+        method: params.method || (mode === 'packaging' ? 'PACKAGING_OCR' : mode === 'manual' ? 'MANUAL' : 'QR'),
       });
 
       // 2. Set result to display in-place
@@ -93,6 +102,22 @@ export default function Scanner() {
       batch_number: parsed.batch,
       serial_number: parsed.serial,
       expiry_date: parsed.normalizedExpiry || parsed.expiry,
+      method: 'QR',
+    });
+  };
+
+  // Callback from Packaging OCR Scanner
+  const handlePackagingVerify = (params: {
+    identifier: string;
+    product_name?: string;
+    manufacturer?: string;
+    batch_number?: string;
+    serial_number?: string;
+    expiry_date?: string;
+  }) => {
+    executeVerification({
+      ...params,
+      method: 'PACKAGING_OCR',
     });
   };
 
@@ -108,6 +133,7 @@ export default function Scanner() {
       batch_number: params.batch,
       serial_number: params.serial,
       expiry_date: params.expiry,
+      method: 'MANUAL',
     });
   };
 
@@ -203,6 +229,28 @@ export default function Scanner() {
                 <button
                   type="button"
                   role="tab"
+                  aria-selected={mode === 'packaging'}
+                  className={`scanner-mode-btn ${mode === 'packaging' ? 'is-active' : ''}`}
+                  onClick={() => {
+                    setMode('packaging');
+                    setError(null);
+                  }}
+                  disabled={isVerifying}
+                >
+                  <Camera size={15} />
+                  <span>Packaging OCR</span>
+                  {mode === 'packaging' && (
+                    <motion.div
+                      layoutId="scannerModeTab"
+                      className="scanner-mode-active-pill"
+                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                    />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
                   aria-selected={mode === 'manual'}
                   className={`scanner-mode-btn ${mode === 'manual' ? 'is-active' : ''}`}
                   onClick={() => {
@@ -283,7 +331,7 @@ export default function Scanner() {
                   <div className="telemetry-spinner" style={{ width: 44, height: 44 }} />
                   <h3 className="verifying-title">CROSS-CHECKING PHARMACEUTICAL REGISTRY</h3>
                   <p className="verifying-subtext font-mono">
-                    Querying MongoDB ledger for {lastScannedPayload || 'specimen'}...
+                    Querying pharmaceutical registry for {lastScannedPayload || 'specimen'}...
                   </p>
                 </div>
               )}
@@ -295,6 +343,13 @@ export default function Scanner() {
                     <CameraScanner
                       onCodeDetected={handleCodeDetected}
                       onSwitchToManual={() => setMode('manual')}
+                      isVerifying={isVerifying}
+                    />
+                  )}
+
+                  {mode === 'packaging' && (
+                    <PackagingScanner
+                      onVerify={handlePackagingVerify}
                       isVerifying={isVerifying}
                     />
                   )}

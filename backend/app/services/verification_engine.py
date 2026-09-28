@@ -33,6 +33,9 @@ def verify_medicine(req: VerifyRequest, user: dict | None = None) -> Verificatio
     user_email = user.get("email") if user else None
     user_name = user.get("name") if user else "Anonymous Guest"
 
+    # Resolve verification method from request
+    method = (req.method or "QR").upper()
+
     # ----- 1. Parse -----
     parsed = parse_identifier(req.identifier)
 
@@ -99,7 +102,8 @@ def verify_medicine(req: VerifyRequest, user: dict | None = None) -> Verificatio
 
     result = VerificationResult(
         verification_id=verification_id,
-        input_type="qr",
+        input_type=method.lower(),
+        verification_method=method,
         raw_identifier=req.identifier,
         parsed_data=parsed,
         matched_medicine_id=matched_id,
@@ -122,3 +126,5 @@ def verify_medicine(req: VerifyRequest, user: dict | None = None) -> Verificatio
     )
 
     return result
+
+

@@ -103,7 +103,9 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # Start backend server
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+# Or alternately from backend directory:
+# uvicorn main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 ### 3. Frontend Setup

@@ -13,27 +13,57 @@ import {
   ShieldAlert,
   ChevronRight,
   Sparkles,
-  Info,
+  Camera,
+  Image as ImageIcon,
+  PenLine,
+  Package,
+  Pill,
+  Heart,
 } from 'lucide-react';
 import { Link, useNavigate } from '../../router';
-import { getUserStats, getUserRecent, getStoredUser } from '../../api/client';
-import type { UserStats } from '../../types';
+import { getUserStats, getUserRecent, getStoredUser, getCabinet } from '../../api/client';
+import type { UserStats, CabinetEntry } from '../../types';
 import StatusBadge from '../../components/ui/StatusBadge';
 
 export const UserHome: React.FC = () => {
   const [stats, setStats] = useState<UserStats | null>(null);
   const [recent, setRecent] = useState<any[]>([]);
+  const [cabinetCount, setCabinetCount] = useState(0);
+  const [expiringCount, setExpiringCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const user = getStoredUser();
   const navigate = useNavigate();
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([getUserStats(), getUserRecent(6)])
-      .then(([s, r]) => {
+    Promise.all([
+      getUserStats(),
+      getUserRecent(6),
+      getCabinet().catch(() => []),
+    ])
+      .then(([s, r, cabinet]) => {
         if (mounted) {
           setStats(s);
           setRecent(r.recent || []);
+          setCabinetCount(Array.isArray(cabinet) ? cabinet.length : 0);
+
+          // Count medicines expiring within 30 days
+          if (Array.isArray(cabinet)) {
+            const now = new Date();
+            const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+            const expiring = cabinet.filter((c: CabinetEntry) => {
+              if (!c.expiry_date) return false;
+              try {
+                const exp = new Date(c.expiry_date);
+                const diff = exp.getTime() - now.getTime();
+                return diff > 0 && diff < thirtyDays;
+              } catch {
+                return false;
+              }
+            });
+            setExpiringCount(expiring.length);
+          }
+
           setLoading(false);
         }
       })
@@ -69,27 +99,96 @@ export const UserHome: React.FC = () => {
           <span>OFFICIAL MEDICINE VERIFICATION</span>
         </div>
 
-        <h1 className="user-home-title">VERIFY A MEDICINE</h1>
+        <h1 className="user-home-title">VERIFY YOUR MEDICINE</h1>
         <p className="user-home-subtitle">
-          Scan a QR code, DataMatrix or barcode to verify medicine identity against the trusted pharmaceutical registry.
+          Choose how you'd like to verify your medicine against the trusted pharmaceutical registry.
         </p>
 
-        {/* Primary Call-to-Actions */}
-        <div className="user-home-actions">
-          <Link to="/app/scanner" className="user-home-btn-primary">
-            <ScanLine size={20} className="user-btn-icon" />
-            <div className="user-btn-text-group">
-              <span className="user-btn-main">SCAN A MEDICINE</span>
-              <span className="user-btn-sub">Open camera to read packaging barcode</span>
+        {/* 3-Method Verification Hub */}
+        <div className="verify-hub-grid">
+          {/* Method 1: Scan Code */}
+          <Link to="/app/scanner" className="verify-hub-card verify-hub-card--scan">
+            <div className="verify-hub-icon-wrap verify-hub-icon--scan">
+              <ScanLine size={28} strokeWidth={1.5} />
             </div>
-            <ArrowRight size={18} className="user-btn-arrow" />
+            <div className="verify-hub-card-body">
+              <h3 className="verify-hub-card-title">Scan Code</h3>
+              <p className="verify-hub-card-desc">
+                Open camera to scan QR, DataMatrix, or barcode on medicine packaging.
+              </p>
+            </div>
+            <div className="verify-hub-card-footer">
+              <span className="verify-hub-method-tag">QR · DataMatrix · EAN</span>
+              <ArrowRight size={16} className="verify-hub-arrow" />
+            </div>
           </Link>
 
-          <Link to="/app/scanner?mode=manual" className="user-home-btn-secondary">
-            <Keyboard size={18} />
-            <span>ENTER CODE MANUALLY</span>
+          {/* Method 2: Scan Packaging (OCR) */}
+          <Link to="/app/scanner?mode=packaging" className="verify-hub-card verify-hub-card--packaging">
+            <div className="verify-hub-icon-wrap verify-hub-icon--packaging">
+              <Camera size={28} strokeWidth={1.5} />
+            </div>
+            <div className="verify-hub-card-body">
+              <h3 className="verify-hub-card-title">Scan Packaging</h3>
+              <p className="verify-hub-card-desc">
+                Photograph the medicine label and extract details with optical text recognition.
+              </p>
+            </div>
+            <div className="verify-hub-card-footer">
+              <span className="verify-hub-method-tag">OCR · Label · Box</span>
+              <ArrowRight size={16} className="verify-hub-arrow" />
+            </div>
+          </Link>
+
+          {/* Method 3: Manual Entry */}
+          <Link to="/app/scanner?mode=manual" className="verify-hub-card verify-hub-card--manual">
+            <div className="verify-hub-icon-wrap verify-hub-icon--manual">
+              <PenLine size={28} strokeWidth={1.5} />
+            </div>
+            <div className="verify-hub-card-body">
+              <h3 className="verify-hub-card-title">Enter Details</h3>
+              <p className="verify-hub-card-desc">
+                Type in the GTIN, batch number, or GS1 barcode string from the packaging.
+              </p>
+            </div>
+            <div className="verify-hub-card-footer">
+              <span className="verify-hub-method-tag">GTIN · Batch · Serial</span>
+              <ArrowRight size={16} className="verify-hub-arrow" />
+            </div>
           </Link>
         </div>
+      </section>
+
+      {/* Quick Access Cards */}
+      <section className="user-home-quick-access">
+        <Link to="/app/cabinet" className="quick-access-card">
+          <div className="quick-access-icon-wrap quick-access--cabinet">
+            <Package size={20} />
+          </div>
+          <div className="quick-access-info">
+            <span className="quick-access-title">Medicine Cabinet</span>
+            <span className="quick-access-value">
+              {loading ? '—' : `${cabinetCount} saved`}
+              {expiringCount > 0 && (
+                <span className="quick-access-alert"> · {expiringCount} expiring soon</span>
+              )}
+            </span>
+          </div>
+          <ChevronRight size={16} className="quick-access-arrow" />
+        </Link>
+
+        <Link to="/app/history" className="quick-access-card">
+          <div className="quick-access-icon-wrap quick-access--history">
+            <Clock size={20} />
+          </div>
+          <div className="quick-access-info">
+            <span className="quick-access-title">My Activity</span>
+            <span className="quick-access-value">
+              {loading ? '—' : `${stats?.total_verifications ?? 0} total verifications`}
+            </span>
+          </div>
+          <ChevronRight size={16} className="quick-access-arrow" />
+        </Link>
       </section>
 
       {/* Personal Verification Metrics */}
@@ -159,7 +258,7 @@ export const UserHome: React.FC = () => {
           <div className="user-home-empty-box">
             <ScanLine size={36} className="user-home-empty-icon" />
             <h3>No verification scans yet</h3>
-            <p>Ready to verify your first medicine? Click "Scan a Medicine" or enter the packaging code manually.</p>
+            <p>Ready to verify your first medicine? Click "Scan Code" or enter the packaging code manually.</p>
             <Link to="/app/scanner" className="user-home-empty-cta">
               Scan Medicine Now
             </Link>
