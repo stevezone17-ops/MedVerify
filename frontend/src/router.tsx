@@ -181,7 +181,40 @@ export function Routes({ children }: { children: ReactNode }) {
   for (const route of routes) {
     const { path, element, children: childRoutes } = route.props;
 
-    // Check if parent matches prefix (e.g. /app)
+    // 1. Pathless Layout Route: e.g. <Route element={<UserShell />}> <Route path="/verify" .../> </Route>
+    if (!path && childRoutes) {
+      const nestedRoutes = React.Children.toArray(childRoutes) as React.ReactElement<RouteProps>[];
+      let childElem: ReactNode = null;
+      let childParams: Record<string, string> = {};
+
+      for (const cRoute of nestedRoutes) {
+        if (cRoute.props.index && (currentPath === '/' || currentPath === '')) {
+          childElem = cRoute.props.element;
+          break;
+        }
+
+        if (cRoute.props.path) {
+          const childPattern = cRoute.props.path.startsWith('/')
+            ? cRoute.props.path
+            : `/${cRoute.props.path}`;
+          const res = matchPath(childPattern, currentPath);
+          if (res.matches) {
+            childElem = cRoute.props.element;
+            childParams = res.params;
+            break;
+          }
+        }
+      }
+
+      if (childElem !== null) {
+        matchedElement = element;
+        matchedOutlet = childElem;
+        matchedParams = childParams;
+        break;
+      }
+    }
+
+    // 2. Prefixed Layout Route: e.g. <Route path="/admin" element={<AdminShell />}> <Route path="users" .../> </Route>
     if (path && childRoutes) {
       const normalizedParent = path.startsWith('/') ? path : `/${path}`;
       if (currentPath === normalizedParent || currentPath.startsWith(`${normalizedParent}/`)) {
@@ -198,25 +231,33 @@ export function Routes({ children }: { children: ReactNode }) {
           }
 
           if (cRoute.props.path) {
-            const childPattern = cRoute.props.path.startsWith('/')
-              ? cRoute.props.path
-              : `/${cRoute.props.path}`;
-            const res = matchPath(childPattern, subPath);
-            if (res.matches) {
+            const rawChild = cRoute.props.path;
+            const resCurrent = rawChild.startsWith('/') ? matchPath(rawChild, currentPath) : { matches: false, params: {} };
+            const childPattern = rawChild.startsWith('/') ? rawChild : `/${rawChild}`;
+            const resSub = matchPath(childPattern, subPath);
+
+            if (resCurrent.matches) {
               childElem = cRoute.props.element;
-              childParams = res.params;
+              childParams = resCurrent.params;
+              break;
+            } else if (resSub.matches) {
+              childElem = cRoute.props.element;
+              childParams = resSub.params;
               break;
             }
           }
         }
 
-        matchedElement = element;
-        matchedOutlet = childElem;
-        matchedParams = childParams;
-        break;
+        if (childElem !== null) {
+          matchedElement = element;
+          matchedOutlet = childElem;
+          matchedParams = childParams;
+          break;
+        }
       }
     }
 
+    // 3. Simple Direct Route: e.g. <Route path="/" element={<Landing />} />
     if (path) {
       const res = matchPath(path, currentPath);
       if (res.matches) {

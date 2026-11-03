@@ -16,6 +16,7 @@ import {
   Check,
 } from 'lucide-react';
 import { login, register, getStoredUser } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence, useReducedMotion, type Variants } from 'framer-motion';
 
 // ---------------------------------------------------------------------------
@@ -115,6 +116,7 @@ function normalizeError(err: unknown): NormalizedError {
 
 export default function Login() {
   const navigate = useNavigate();
+  const auth = useAuth();
   const shouldReduceMotion = useReducedMotion();
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -129,13 +131,33 @@ export default function Login() {
   const isLoading = status === 'loading';
   const isSuccess = status === 'success';
 
-  // Role routing
+  // Role routing & redirect parameter handling
   const navigateByRole = () => {
-    const user = getStoredUser();
+    const user = auth.user || getStoredUser();
+    const searchParams = new URLSearchParams(window.location.search);
+    const redirectParam = searchParams.get('redirect');
+
+    console.log('[MedVerify Login] Routing authenticated user:', {
+      userId: user?.id,
+      role: user?.role,
+      redirectParam,
+    });
+
+    if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')) {
+      // Security guard: prevent non-admins from being redirected to /admin
+      if (redirectParam.startsWith('/admin') && user?.role !== 'admin') {
+        console.warn('[MedVerify Login] Access denied: Non-admin redirected to /verify instead of', redirectParam);
+        navigate('/verify', { replace: true });
+        return;
+      }
+      navigate(redirectParam, { replace: true });
+      return;
+    }
+
     if (user?.role === 'admin') {
-      navigate('/admin');
+      navigate('/admin', { replace: true });
     } else {
-      navigate('/app');
+      navigate('/verify', { replace: true });
     }
   };
 
@@ -173,9 +195,9 @@ export default function Login() {
           setStatus('error');
           return;
         }
-        await register(name, email, password);
+        await auth.register(name, email, password);
       } else {
-        await login(email, password);
+        await auth.login(email, password);
       }
 
       setStatus('success');

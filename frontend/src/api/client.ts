@@ -14,11 +14,13 @@ import type {
   VerificationHistoryResponse,
   Medicine,
   AuthResponse,
+  User,
   AnalyticsData,
   CabinetEntry,
   NotificationPreferences,
   VerificationReport,
 } from '../types';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 // ---------------------------------------------------------------------------
 // Base fetch wrapper
@@ -325,37 +327,182 @@ export async function getAdminInvestigation(
 // ---------------------------------------------------------------------------
 
 export async function login(email: string, password: string): Promise<AuthResponse> {
+  const cleanEmail = email.trim().toLowerCase();
+
+  // 1. If Supabase is configured, attempt Supabase Auth authentication first
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      console.log('[MedVerify Auth] Attempting Supabase authentication for:', cleanEmail);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
+
+      if (error) {
+        console.warn('[MedVerify Auth] Supabase auth returned notice, trying API login:', error.message);
+      } else if (data.session && data.user) {
+        const token = data.session.access_token;
+        const uid = data.user.id;
+
+        // Fetch user profile from Supabase profiles table
+        let role: 'user' | 'admin' = (data.user.user_metadata?.role as any) || 'user';
+        let name = data.user.user_metadata?.full_name || data.user.user_metadata?.name || cleanEmail.split('@')[0];
+
+        try {
+          const profileRes = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
+          if (profileRes.data) {
+            role = profileRes.data.role === 'admin' ? 'admin' : 'user';
+            name = profileRes.data.full_name || profileRes.data.name || name;
+          }
+        } catch (pErr) {
+          console.warn('[MedVerify Auth] Supabase profile table read warning:', pErr);
+        }
+
+        const userObj: User = {
+          id: uid,
+          name,
+          email: data.user.email || cleanEmail,
+          role,
+          created_at: data.user.created_at || new Date().toISOString(),
+        };
+
+        localStorage.setItem('medverify_token', token);
+        localStorage.setItem('medverify_user', JSON.stringify(userObj));
+        console.log('[MedVerify Auth] Supabase sign-in successful. Retrieved user ID:', uid, 'Role:', role);
+
+        return {
+          access_token: token,
+          token_type: 'bearer',
+          user: userObj,
+        };
+      }
+    } catch (sbErr) {
+      console.warn('[MedVerify Auth] Supabase auth exception, falling back to API:', sbErr);
+    }
+  }
+
+  // 2. Primary / Fallback API Auth
   const resp = await apiFetch<AuthResponse>('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email: cleanEmail, password }),
   });
+
   localStorage.setItem('medverify_token', resp.access_token);
   localStorage.setItem('medverify_user', JSON.stringify(resp.user));
+  console.log('[MedVerify Auth] API sign-in successful. Retrieved user ID:', resp.user.id, 'Role:', resp.user.role);
   return resp;
 }
 
 export async function register(name: string, email: string, password: string): Promise<AuthResponse> {
+  const cleanEmail = email.trim().toLowerCase();
+
+  // If Supabase is configured, attempt Supabase Auth registration
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          data: { full_name: name, role: 'user' },
+        },
+      });
+
+      if (!error && data.session && data.user) {
+        const token = data.session.access_token;
+        const userObj: User = {
+          id: data.user.id,
+          name,
+          email: cleanEmail,
+          role: 'user',
+          created_at: data.user.created_at || new Date().toISOString(),
+        };
+        localStorage.setItem('medverify_token', token);
+        localStorage.setItem('medverify_user', JSON.stringify(userObj));
+        console.log('[MedVerify Auth] Supabase registration successful. User ID:', data.user.id);
+        return {
+          access_token: token,
+          token_type: 'bearer',
+          user: userObj,
+        };
+      }
+    } catch (sbErr) {
+      console.warn('[MedVerify Auth] Supabase signUp exception, using API register:', sbErr);
+    }
+  }
+
   const resp = await apiFetch<AuthResponse>('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ name, email, password }),
+    body: JSON.stringify({ name, email: cleanEmail, password }),
   });
   localStorage.setItem('medverify_token', resp.access_token);
   localStorage.setItem('medverify_user', JSON.stringify(resp.user));
+  console.log('[MedVerify Auth] API registration successful. User ID:', resp.user.id, 'Role:', resp.user.role);
   return resp;
 }
 
-export function logout(): void {
+export async function logout(): Promise<void> {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('[MedVerify Auth] Supabase signOut error:', e);
+    }
+  }
   localStorage.removeItem('medverify_token');
   localStorage.removeItem('medverify_user');
+  console.log('[MedVerify Auth] User logged out and local session cleared.');
 }
 
-export function getStoredUser(): import('../types').User | null {
+export function getStoredUser(): User | null {
   const raw = localStorage.getItem('medverify_user');
-  return raw ? JSON.parse(raw) : null;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 export function isAuthenticated(): boolean {
   return !!localStorage.getItem('medverify_token');
+}
+
+export async function fetchCurrentProfile(): Promise<User> {
+  const token = localStorage.getItem('medverify_token');
+  if (!token) throw new Error('No authentication token found.');
+
+  // Try API /api/auth/me
+  try {
+    const res = await apiFetch<User>('/api/auth/me');
+    if (res && res.id) {
+      localStorage.setItem('medverify_user', JSON.stringify(res));
+      return res;
+    }
+  } catch (apiErr: any) {
+    // If Supabase is configured, try Supabase session
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser(token);
+        if (user) {
+          const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+          const role: 'user' | 'admin' = profile?.role === 'admin' ? 'admin' : 'user';
+          const userObj: User = {
+            id: user.id,
+            name: profile?.full_name || profile?.name || user.email?.split('@')[0] || 'Verified User',
+            email: user.email || '',
+            role,
+            created_at: profile?.created_at || user.created_at || new Date().toISOString(),
+          };
+          localStorage.setItem('medverify_user', JSON.stringify(userObj));
+          return userObj;
+        }
+      } catch (sbErr) {
+        console.warn('[MedVerify Auth] Supabase getUser failed:', sbErr);
+      }
+    }
+    throw apiErr;
+  }
+  throw new Error('Unable to retrieve user verification profile.');
 }
 
 // ---------------------------------------------------------------------------

@@ -1,13 +1,14 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from './router';
 import { AnimatePresence } from 'framer-motion';
+import { AuthProvider } from './context/AuthContext';
 
 /* Layout Shells */
 import UserShell from './components/layout/UserShell';
 import AdminShell from './components/layout/AdminShell';
 
 /* Route Protection */
-import ProtectedRoute from './components/auth/ProtectedRoute';
+import ProtectedRoute, { PublicRoute } from './components/auth/ProtectedRoute';
 
 /* Public Pages */
 import Landing from './pages/Landing';
@@ -33,69 +34,77 @@ import About from './pages/About';
 export default function App() {
   return (
     <BrowserRouter>
-      <AnimatePresence mode="wait">
-        <Routes>
-          {/* Public Landing & Login */}
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
+      <AuthProvider>
+        <AnimatePresence mode="wait">
+          <Routes>
+            {/* Public Landing & Login */}
+            <Route path="/" element={<Landing />} />
+            <Route
+              path="/login"
+              element={
+                <PublicRoute>
+                  <Login />
+                </PublicRoute>
+              }
+            />
 
-          {/* ============================================================== */}
-          {/* USER PORTAL — Consumer Medicine Verification Experience        */}
-          {/* Strict Separation: /verify, /activity, /cabinet, /how-it-works, /profile */}
-          {/* ============================================================== */}
-          <Route
-            element={
-              <ProtectedRoute requiredRole="user">
-                <UserShell />
-              </ProtectedRoute>
-            }
-          >
-            <Route path="/verify" element={<UserHome />} />
-            <Route path="/verify/scan" element={<Scanner />} />
-            <Route path="/activity" element={<UserHistory />} />
-            <Route path="/cabinet" element={<UserCabinet />} />
-            <Route path="/how-it-works" element={<HowItWorks />} />
-            <Route path="/profile" element={<UserProfile />} />
-            <Route path="/result/:id" element={<VerificationResult />} />
+            {/* ============================================================== */}
+            {/* USER PORTAL — Consumer Medicine Verification Experience        */}
+            {/* Strict Separation: /verify, /activity, /cabinet, /how-it-works, /profile */}
+            {/* ============================================================== */}
+            <Route
+              element={
+                <ProtectedRoute requiredRole="user">
+                  <UserShell />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/verify" element={<UserHome />} />
+              <Route path="/verify/scan" element={<Scanner />} />
+              <Route path="/activity" element={<UserHistory />} />
+              <Route path="/cabinet" element={<UserCabinet />} />
+              <Route path="/how-it-works" element={<HowItWorks />} />
+              <Route path="/profile" element={<UserProfile />} />
+              <Route path="/result/:id" element={<VerificationResult />} />
 
-            {/* Backwards-compatible /app routes */}
-            <Route path="/app" element={<UserHome />} />
-            <Route path="/app/scanner" element={<Scanner />} />
-            <Route path="/app/cabinet" element={<UserCabinet />} />
-            <Route path="/app/history" element={<UserHistory />} />
-            <Route path="/app/how-it-works" element={<HowItWorks />} />
-            <Route path="/app/profile" element={<UserProfile />} />
-            <Route path="/app/result/:id" element={<VerificationResult />} />
-          </Route>
+              {/* Backwards-compatible /app routes */}
+              <Route path="/app" element={<UserHome />} />
+              <Route path="/app/scanner" element={<Scanner />} />
+              <Route path="/app/cabinet" element={<UserCabinet />} />
+              <Route path="/app/history" element={<UserHistory />} />
+              <Route path="/app/how-it-works" element={<HowItWorks />} />
+              <Route path="/app/profile" element={<UserProfile />} />
+              <Route path="/app/result/:id" element={<VerificationResult />} />
+            </Route>
 
-          {/* ============================================================== */}
-          {/* ADMIN CONSOLE — Operational Command Center & Platform Control  */}
-          {/* Strict Separation: /admin, /admin/scanner, /admin/audit, etc. */}
-          {/* ============================================================== */}
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdminShell />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<AdminCommandCenter />} />
-            <Route path="registry" element={<AdminRegistry />} />
-            <Route path="users" element={<AdminUsers />} />
-            <Route path="audit" element={<AdminAudit />} />
-            <Route path="system" element={<AdminSystemHealth />} />
-            <Route path="system-health" element={<AdminSystemHealth />} />
-            <Route path="scanner" element={<Scanner />} />
-            <Route path="specs" element={<About />} />
-            <Route path="result/:id" element={<VerificationResult />} />
-          </Route>
+            {/* ============================================================== */}
+            {/* ADMIN CONSOLE — Operational Command Center & Platform Control  */}
+            {/* Strict Separation: /admin, /admin/scanner, /admin/audit, etc. */}
+            {/* ============================================================== */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <AdminShell />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<AdminCommandCenter />} />
+              <Route path="registry" element={<AdminRegistry />} />
+              <Route path="users" element={<AdminUsers />} />
+              <Route path="audit" element={<AdminAudit />} />
+              <Route path="system" element={<AdminSystemHealth />} />
+              <Route path="system-health" element={<AdminSystemHealth />} />
+              <Route path="scanner" element={<Scanner />} />
+              <Route path="specs" element={<About />} />
+              <Route path="result/:id" element={<VerificationResult />} />
+            </Route>
 
-
-          {/* Catch-all fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AnimatePresence>
+            {/* Catch-all fallback */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AnimatePresence>
+      </AuthProvider>
     </BrowserRouter>
   );
 }
