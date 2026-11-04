@@ -160,6 +160,7 @@ def clean_json_text(text: str) -> str:
 def call_gemini_json(
     system_instruction: str,
     user_prompt: str,
+    history: Optional[List[Dict[str, str]]] = None,
     response_schema: Optional[Any] = None,
     model_override: Optional[str] = None,
     temperature: float = 0.2,
@@ -167,6 +168,7 @@ def call_gemini_json(
 ) -> Dict[str, Any]:
     """Call Google Gemini API enforcing structured JSON output mode.
     
+    Supports optional conversation history for multi-turn conversational memory.
     If response_schema (Pydantic model or schema dict) is provided,
     guarantees strict schema enforcement by Google Gemini.
     Returns the parsed JSON dictionary.
@@ -177,7 +179,7 @@ def call_gemini_json(
         raise RuntimeError("Gemini service unavailable: GEMINI_API_KEY is missing or invalid.")
 
     model = resolve_active_model(model_override)
-    max_out = max_tokens or getattr(settings, "gemini_max_output_tokens", 1500) or 1500
+    max_out = max_tokens or getattr(settings, "gemini_max_output_tokens", 2500) or 2500
 
     config_kwargs: Dict[str, Any] = {
         "system_instruction": system_instruction,
@@ -190,11 +192,33 @@ def call_gemini_json(
 
     config = types.GenerateContentConfig(**config_kwargs)
 
+    # Build contents with optional conversation history
+    contents: List[types.Content] = []
+    if history:
+        for turn in history:
+            raw_role = turn.get("role", "user")
+            role = "model" if raw_role in ("assistant", "model") else "user"
+            content_text = turn.get("content", "").strip()
+            if content_text:
+                contents.append(
+                    types.Content(
+                        role=role,
+                        parts=[types.Part.from_text(text=content_text)],
+                    )
+                )
+
+    contents.append(
+        types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=user_prompt)],
+        )
+    )
+
     start_time = time.time()
     try:
         response = client.models.generate_content(
             model=model,
-            contents=user_prompt,
+            contents=contents,
             config=config,
         )
 
@@ -227,7 +251,7 @@ def call_gemini_json(
                 logger.info("Retrying JSON generation on alternative model '%s' after 503...", alt_model)
                 retry_response = client.models.generate_content(
                     model=alt_model,
-                    contents=user_prompt,
+                    contents=contents,
                     config=config,
                 )
                 cleaned = clean_json_text(retry_response.text or "{}")
@@ -235,6 +259,7 @@ def call_gemini_json(
             except Exception as retry_exc:
                 logger.error("Alternative model retry failed: %s", retry_exc)
             raise RuntimeError("Gemini service is currently experiencing high demand. Please try again.") from s_err
+        raise RuntimeError(f"Gemini server error: {err_msg}") from s_err
         raise RuntimeError(f"Gemini server error: {err_msg}") from s_err
 
     except json.JSONDecodeError as j_err:

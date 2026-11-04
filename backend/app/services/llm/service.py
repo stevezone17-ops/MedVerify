@@ -207,8 +207,15 @@ Respond ONLY with a JSON object conforming to this schema:
 
 CURRENT ACTIVE VERIFICATION EVIDENCE (USER IS INQUIRING ABOUT THIS SPECIFIC PRODUCT):
 {json.dumps(verification_context, indent=2)}
+Note: Explicitly reference the verified fields above in your answer and cite them in grounded_facts.
 """
             system_instruction += context_block
+        else:
+            system_instruction += """
+
+NO ACTIVE VERIFICATION RECORD LOADED:
+There is no active scanned verification record for this query. You must explicitly state in your answer that no specific verification scan record is loaded, and that your explanation is based on general GS1 healthcare standards and pharmaceutical regulatory principles. Distinguish general knowledge from actual registry evidence.
+"""
 
         # 5. Fetch multi-turn conversation history
         history_key = f"{user_id}:{conv_id}"
@@ -218,24 +225,39 @@ CURRENT ACTIVE VERIFICATION EVIDENCE (USER IS INQUIRING ABOUT THIS SPECIFIC PROD
 USER QUESTION (IN {target_lang}):
 {req.question}
 
-INSTRUCTIONS:
-1. Provide a comprehensive, helpful, natural language answer in {target_lang}.
-2. Adhere completely to the medical safety boundary: do NOT give dosage, prescription, or personalized clinical treatment advice.
-3. List 1-3 verified facts or standards referenced in your reasoning under 'grounded_facts'.
-4. Return strictly valid JSON with keys:
-{{
-  "answer": "Grounded natural language answer in {target_lang}",
-  "grounded_facts": ["Fact 1", "Fact 2"],
-  "safety_notice": "MedVerify does not provide personalized medical advice or treatment recommendations."
-}}
+INSTRUCTIONS FOR ANSWER GENERATION:
+1. ANSWER COMPLETENESS & MULTI-PART DECOMPOSITION:
+   - Carefully review every aspect of the user's question. If the user asks about multiple packaging elements (such as QR codes, GTIN, batch numbers, serial numbers, expiry dates, manufacturer information, and what to do if details do not match), you MUST systematically and thoroughly address EVERY single one of those requested topics.
+   - Do NOT omit any requested topic or give a one-topic reply.
+   - Organize your response using clear Markdown headings (e.g., `### 1. 2D DataMatrix / QR Code`, `### 2. GTIN (Global Trade Item Number)`), bold labels, and bullet points so it is highly readable and structured.
+   - Provide concrete, practical packaging examples and real-world guidance for each topic (e.g. where the identifier is found on the carton, what it looks like, and what to check).
+   - Give actionable next steps for discrepancies (e.g. quarantine packaging, do not ingest/administer, retain physical packaging intact, notify dispensing pharmacy, report to drug safety authorities).
+2. ACCURATE PHARMACEUTICAL & GS1 STANDARDS:
+   - Clarify that GTIN can be represented in 8, 12, 13, or 14-digit formats (GTIN-8, GTIN-12, GTIN-13, GTIN-14).
+   - Clarify that GS1 Application Identifier (01) specifically represents a 14-digit GTIN in barcode formats (padded with leading zeros if shorter).
+   - Clarify that Application Identifier (10) represents batch/lot number, (17) represents expiration date (YYMMDD), and (21) represents serial number.
+   - Do NOT describe every GTIN as inherently 14 digits.
+3. GROUNDED EVIDENCE & TRANSPARENCY:
+   - If an active verification record is present above, cite its specific verified parameters (GTIN, batch, expiry, manufacturer).
+   - If NO verification record is loaded, state clearly in the answer that no active verification record is referenced, and this response provides general pharmaceutical and GS1 guidance.
+   - Never fabricate registry matches or claim that Gemini determined authenticity (the deterministic verification engine is the sole authority).
+4. MEDICAL SAFETY BOUNDARY:
+   - Provide educational guidance only; never advise on individual clinical diagnosis, drug dosages, or prescriptions.
+5. REQUIRED JSON FORMAT:
+   Return strictly valid JSON conforming to the schema with:
+   - "answer": Comprehensive, well-structured Markdown response in {target_lang}.
+   - "grounded_facts": Array of 2 to 6 specific verified facts or GS1/regulatory standards supporting the response.
+   - "safety_notice": Standard educational medical safety disclaimer.
 """
 
         try:
+            max_tokens = getattr(settings, "gemini_max_output_tokens", 2500) or 2500
             parsed = call_gemini_json(
                 system_instruction=system_instruction,
                 user_prompt=user_prompt,
+                history=past_turns,
                 response_schema=AskMedVerifyChatPayload,
-                max_tokens=1000,
+                max_tokens=max_tokens,
             )
 
             answer = parsed.get("answer") or ""
@@ -293,11 +315,12 @@ INSTRUCTIONS:
 
         full_response = []
         try:
+            stream_tokens = getattr(settings, "gemini_max_output_tokens", 2500) or 2500
             for chunk in stream_gemini_chat(
                 history=past_turns,
                 message=req.question,
                 system_instruction=system_instruction,
-                max_tokens=900,
+                max_tokens=stream_tokens,
             ):
                 full_response.append(chunk)
                 yield chunk
@@ -578,27 +601,117 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
         ctx: Optional[Dict[str, Any]],
         conv_id: str,
     ) -> AskMedVerifyResponse:
-        """Deterministic safety assistant fallback when AI is unavailable."""
+        """Deterministic safety assistant fallback when AI is unavailable or rate-limited."""
         q_lower = req.question.lower()
 
+        # Check for clinical advice questions first
         if any(w in q_lower for w in ["dose", "dosage", "how many", "pills", "prescribe", "treatment", "take"]):
             answer = (
-                "MedVerify is a packaging verification platform and cannot provide clinical advice, dosage instructions, "
+                "MedVerify is a pharmaceutical packaging verification platform and cannot provide clinical advice, dosage instructions, "
                 "or treatment recommendations. Please consult a licensed physician or pharmacist immediately regarding any medication use."
             )
-            facts = ["Clinical dosing must always be determined by a licensed medical practitioner."]
+            facts = ["Clinical dosing and diagnosis must always be determined by a licensed medical practitioner."]
+            return AskMedVerifyResponse(
+                answer=answer,
+                grounded_facts=facts,
+                verification_referenced=req.verification_id,
+                safety_notice="MedVerify does not provide personalized medical advice or treatment recommendations.",
+                conversation_id=conv_id,
+                model_used="deterministic-rule-engine",
+            )
+
+        # If active verification context is present, answer grounded in the record
+        if ctx:
+            scanned = ctx.get("scanned_parameters", {})
+            registered = ctx.get("registered_specimen") or {}
+            status = ctx.get("status", "UNKNOWN")
+            confidence = ctx.get("confidence_score", 0)
+
+            prod_name = registered.get("product_name") or "Registered Pharmaceutical Product"
+            mfr = registered.get("manufacturer") or "Authorized Manufacturer"
+            batch = scanned.get("batch_number") or registered.get("registered_batch") or "N/A"
+            gtin = scanned.get("gtin") or "N/A"
+            expiry = scanned.get("expiry_date") or registered.get("registered_expiry") or "N/A"
+            serial = scanned.get("serial_number") or "N/A"
+
+            answer = (
+                f"### Active Verification Record ({status} — {confidence}%)\n\n"
+                f"- **Product Name:** {prod_name}\n"
+                f"- **Manufacturer:** {mfr}\n"
+                f"- **Batch / Lot Number:** {batch}\n"
+                f"- **GTIN:** {gtin}\n"
+                f"- **Expiry Date:** {expiry}\n"
+                f"- **Serial Number:** {serial}\n\n"
+                f"This information is grounded directly in active MedVerify registry records for verification token `{req.verification_id}`."
+            )
+            facts = [
+                f"Active record Product: {prod_name} by {mfr}.",
+                f"Batch {batch} registered with expiry {expiry}.",
+                f"Verification integrity score: {confidence}% (Status: {status}).",
+            ]
+            return AskMedVerifyResponse(
+                answer=answer,
+                grounded_facts=facts,
+                verification_referenced=req.verification_id,
+                safety_notice="MedVerify does not provide personalized medical advice or treatment recommendations.",
+                conversation_id=conv_id,
+                model_used="deterministic-rule-engine",
+            )
+
+        # Multi-part question checking multiple packaging factors
+        is_multipart = sum(1 for term in ["qr", "gtin", "batch", "serial", "expir", "manufacturer", "mismatch", "match", "not match"] if term in q_lower) >= 3
+
+        if is_multipart:
+            answer = (
+                "### Verification Notice\n"
+                "No specific verification scan record is loaded. The following guidance is based on general GS1 healthcare standards and pharmaceutical regulatory principles.\n\n"
+                "### 1. 2D DataMatrix / QR Code\n"
+                "Look for the two-dimensional DataMatrix barcode printed on the carton. It encodes machine-readable GS1 identifiers that MedVerify scans to verify packaging authenticity.\n\n"
+                "### 2. GTIN (Global Trade Item Number)\n"
+                "GTIN can be represented in 8, 12, 13, or 14-digit formats (GTIN-8, GTIN-12, GTIN-13, GTIN-14). In GS1 healthcare DataMatrix barcodes, Application Identifier (01) encodes a 14-digit GTIN uniquely identifying the drug product and packaging format.\n\n"
+                "### 3. Batch / Lot Number (AI 10)\n"
+                "Application Identifier (10) specifies the manufacturer's production batch. Verify that the batch printed in human-readable text matches the barcode data and the pharmacy invoice.\n\n"
+                "### 4. Serial Number (AI 21)\n"
+                "Application Identifier (21) encodes a randomized unique serial number. Each individual unit must have its own distinct serial code to prevent counterfeit duplication.\n\n"
+                "### 5. Expiry Date (AI 17)\n"
+                "Application Identifier (17) encodes the expiration date in YYMMDD format. Never administer medication past its regulatory expiry date.\n\n"
+                "### 6. Manufacturer Verification\n"
+                "Verify that the manufacturer name, registered address, and regulatory license number printed on the packaging match authorized national regulatory registries.\n\n"
+                "### What to Do If Details Do Not Match\n"
+                "1. **Quarantine the pack:** Do not consume, ingest, or administer the medication.\n"
+                "2. **Preserve packaging:** Keep the carton, blister, and pharmacy receipt intact for forensic inspection.\n"
+                "3. **Contact the pharmacy:** Notify the dispensing pharmacist immediately.\n"
+                "4. **Report the discrepancy:** File a counterfeit / packaging incident report in MedVerify and notify your national drug regulatory agency."
+            )
+            facts = [
+                "GTIN can be represented in 8, 12, 13, or 14-digit formats; GS1 AI (01) encodes a 14-digit GTIN.",
+                "GS1 Application Identifier (10) represents Batch Number, AI (17) represents Expiry Date, and AI (21) represents Serial Number.",
+                "Mismatched packaging parameters must be quarantined and reported to the dispensing pharmacy and drug regulatory authorities.",
+            ]
         elif any(w in q_lower for w in ["gtin", "barcode", "datamatrix", "01"]):
             answer = (
-                "A GTIN (Global Trade Item Number) is a globally unique 14-digit number defined by GS1 standards. "
-                "In pharmaceuticals, it identifies the specific manufacturer, drug product, strength, and packaging format."
+                "A GTIN (Global Trade Item Number) is a globally unique identifier defined by GS1 standards. "
+                "GTIN can be represented in 8, 12, 13, or 14-digit formats (GTIN-8, GTIN-12, GTIN-13, and GTIN-14). "
+                "In healthcare 2D DataMatrix barcodes, GS1 Application Identifier (01) specifically encodes a 14-digit GTIN, "
+                "padding shorter formats with leading zeros. It uniquely identifies the manufacturer, product, dosage strength, and packaging."
             )
-            facts = ["GS1 Application Identifier (01) defines the 14-digit pharmaceutical GTIN."]
-        elif any(w in q_lower for w in ["batch", "lot", "10"]):
+            facts = [
+                "GTIN can be represented in 8, 12, 13, or 14-digit formats.",
+                "GS1 Application Identifier (01) encodes a 14-digit GTIN in healthcare barcodes.",
+            ]
+        elif any(w in q_lower for w in ["batch", "lot", "10", "expiry", "17", "serial", "21"]):
             answer = (
-                "The batch or lot number (GS1 AI 10) identifies the specific manufacturing production run. "
-                "It allows regulatory authorities and manufacturers to trace product safety and manage recalls."
+                "GS1 Healthcare packaging standards utilize designated Application Identifiers (AIs):\n"
+                "- AI (01): 14-digit Global Trade Item Number (GTIN).\n"
+                "- AI (10): Batch or Lot Number identifying the specific production run.\n"
+                "- AI (17): Expiration date encoded in YYMMDD format.\n"
+                "- AI (21): Randomized individual serial number for unit-level traceability."
             )
-            facts = ["GS1 Application Identifier (10) specifies the manufacturer's production batch."]
+            facts = [
+                "Application Identifier (10) represents batch/lot number.",
+                "Application Identifier (17) represents expiration date in YYMMDD format.",
+                "Application Identifier (21) represents unit serial number.",
+            ]
         elif any(w in q_lower for w in ["fake", "counterfeit", "suspicious", "tamper", "authentic"]):
             answer = (
                 "MedVerify AI cannot determine or declare whether a medicine is authentic or counterfeit. "

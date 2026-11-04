@@ -29,10 +29,10 @@ class Settings(BaseSettings):
     # Google Gemini API Configuration (Official google-genai SDK)
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash"
-    gemini_max_output_tokens: int = 1500
-    gemini_timeout_seconds: float = 30.0
-    gemini_rate_limit_per_minute: int = 15
-    gemini_admin_rate_limit_per_minute: int = 40
+    gemini_max_output_tokens: int = 2500
+    gemini_timeout_seconds: float = 35.0
+    gemini_rate_limit_per_minute: int = 40
+    gemini_admin_rate_limit_per_minute: int = 60
 
     # OpenAI LLM Configuration (Legacy / Fallback)
     openai_api_key: str = ""

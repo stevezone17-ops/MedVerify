@@ -72,7 +72,7 @@ class VerificationExplanation(BaseModel):
 # ---------------------------------------------------------------------------
 
 class AskMedVerifyRequest(BaseModel):
-    question: str = Field(..., min_length=2, max_length=1000, description="User question about verification or medicine security")
+    question: str = Field(..., min_length=2, max_length=2500, description="User question about verification or medicine security")
     verification_id: Optional[str] = Field(None, description="Optional verification record context")
     conversation_id: Optional[str] = Field(None, description="Conversation session ID for conversational memory")
     language: str = Field("en", description="Preferred response language")

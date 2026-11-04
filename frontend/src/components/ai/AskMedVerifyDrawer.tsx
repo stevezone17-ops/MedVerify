@@ -33,12 +33,107 @@ interface AskMedVerifyDrawerProps {
 }
 
 const QUICK_PROMPTS = [
-  'Why was this medicine verified or flagged?',
-  'What does GTIN mean on medicine packaging?',
-  'What is a batch number and why does it matter?',
-  'What should I do if a tamper seal is broken?',
-  'Explain this verification result in simple words.',
+  'How do I verify a medicine using its QR code, GTIN, and batch?',
+  'What are the valid GTIN formats and GS1 Application Identifiers?',
+  'What should I do if a batch number or serial code does not match?',
+  'What are physical packaging indicators of counterfeit drugs?',
+  'Why does MedVerify check for duplicate serial number reuse?',
 ];
+
+/**
+ * Format markdown headings, bullet points, numbered lists, bold text, and inline code
+ * into accessible, clean React elements without external parser dependencies.
+ */
+const renderFormattedMessage = (content: string, isUser: boolean): React.ReactNode => {
+  if (isUser) {
+    return <p style={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{content}</p>;
+  }
+
+  const lines = content.split('\n');
+  const elements: React.ReactNode[] = [];
+  let currentList: { type: 'ul' | 'ol'; items: React.ReactNode[] } | null = null;
+
+  const flushList = () => {
+    if (currentList) {
+      if (currentList.type === 'ul') {
+        elements.push(
+          <ul key={`ul_${elements.length}`}>
+            {currentList.items.map((item, idx) => (
+              <li key={idx}>{item}</li>
+            ))}
+          </ul>
+        );
+      } else {
+        elements.push(
+          <ol key={`ol_${elements.length}`}>
+            {currentList.items.map((item, idx) => (
+              <li key={idx}>{item}</li>
+            ))}
+          </ol>
+        );
+      }
+      currentList = null;
+    }
+  };
+
+  const formatInline = (str: string): React.ReactNode => {
+    const parts = str.split(/(\*\*.*?\*\*|`.*?`)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i}>{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith('`') && part.endsWith('`')) {
+        return <code key={i}>{part.slice(1, -1)}</code>;
+      }
+      return part;
+    });
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
+      flushList();
+      continue;
+    }
+
+    // Markdown Headings: ##, ###, ####
+    if (/^#{2,4}\s+/.test(line)) {
+      flushList();
+      const headingText = line.replace(/^#{2,4}\s+/, '');
+      elements.push(<h4 key={`h_${i}`}>{formatInline(headingText)}</h4>);
+      continue;
+    }
+
+    // Bullet List Items: - or *
+    if (/^[-*]\s+/.test(line)) {
+      const itemText = line.replace(/^[-*]\s+/, '');
+      if (!currentList || currentList.type !== 'ul') {
+        flushList();
+        currentList = { type: 'ul', items: [] };
+      }
+      currentList.items.push(formatInline(itemText));
+      continue;
+    }
+
+    // Numbered List Items: 1. or 2.
+    if (/^\d+\.\s+/.test(line)) {
+      const itemText = line.replace(/^\d+\.\s+/, '');
+      if (!currentList || currentList.type !== 'ol') {
+        flushList();
+        currentList = { type: 'ol', items: [] };
+      }
+      currentList.items.push(formatInline(itemText));
+      continue;
+    }
+
+    // Standard paragraph
+    flushList();
+    elements.push(<p key={`p_${i}`}>{formatInline(line)}</p>);
+  }
+
+  flushList();
+  return <div className="ask-ai-formatted-body">{elements}</div>;
+};
 
 export const AskMedVerifyDrawer: React.FC<AskMedVerifyDrawerProps> = ({
   isOpen,
@@ -128,7 +223,7 @@ export const AskMedVerifyDrawer: React.FC<AskMedVerifyDrawerProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="report-modal-backdrop" onClick={onClose}>
+      <div className="ask-ai-backdrop" onClick={onClose}>
         <motion.div
           className="ask-ai-drawer"
           initial={{ x: '100%' }}
@@ -180,14 +275,14 @@ export const AskMedVerifyDrawer: React.FC<AskMedVerifyDrawerProps> = ({
 
                 <div className="ask-ai-bubble-content">
                   <div className={`ask-ai-bubble ${m.sender}`}>
-                    <p style={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{m.text}</p>
+                    {renderFormattedMessage(m.text, m.sender === 'user')}
                   </div>
 
                   {/* Grounded facts badge */}
                   {m.groundedFacts && m.groundedFacts.length > 0 && (
                     <div className="ask-ai-grounded-facts">
                       <div className="ask-ai-grounded-title">
-                        <ShieldCheck size={11} style={{ color: 'var(--color-primary-600)' }} />
+                        <ShieldCheck size={11} style={{ color: '#0f766e' }} />
                         <span>Grounded Evidence Referenced:</span>
                       </div>
                       <ul className="ask-ai-grounded-list">

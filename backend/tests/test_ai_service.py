@@ -28,6 +28,11 @@ from app.services.llm.service import llm_service, rate_limiter
 from app.services.auth_service import create_token
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    rate_limiter._history.clear()
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
@@ -349,4 +354,78 @@ def test_gemini_chat_streaming(client, user_token):
     assert "text/plain" in resp.headers.get("content-type", "")
     content = resp.text
     assert len(content) > 0
+
+
+def test_gemini_multipart_question_completeness(client, user_token):
+    """Test multi-part question covering QR, GTIN, batch, serial, expiry, manufacturer, and mismatch."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    question = (
+        "I purchased Amoxicillin 500 mg capsules. Explain how I can verify the medicine using its "
+        "QR code, GTIN, batch number, serial number, expiry date, and manufacturer information. "
+        "Also explain what I should do if one of these details does not match."
+    )
+    resp = client.post(
+        "/api/ai/chat",
+        json={"question": question},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    ans = data["answer"].lower()
+
+    # Verify that multi-part question addresses the core topics
+    assert any(term in ans for term in ["qr", "datamatrix", "barcode"])
+    assert "gtin" in ans
+    assert "batch" in ans or "lot" in ans
+    assert "serial" in ans
+    assert "expir" in ans or "date" in ans
+    assert "manufacturer" in ans or "maker" in ans or "company" in ans
+    # Discrepancy handling: quarantine, do not consume/take, pharmacy/report
+    assert any(term in ans for term in ["not", "mismatch", "pharmacy", "quarantine", "report", "physician"])
+
+    # Grounded facts must be present
+    assert len(data["grounded_facts"]) >= 1
+    assert "safety_notice" in data
+
+
+def test_gemini_gtin_formats_technical_accuracy(client, user_token):
+    """Verify assistant explains GTIN formats (8, 12, 13, 14 digits) and GS1 Application Identifiers."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    resp = client.post(
+        "/api/ai/chat",
+        json={"question": "What digit lengths can a GTIN have and what are Application Identifiers 01, 10, 17, and 21?"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    ans = data["answer"]
+    # Check that GTIN format lengths or AI identifiers are mentioned
+    assert any(term in ans for term in ["14", "13", "12", "8", "(01)", "01"])
+    assert len(data["grounded_facts"]) >= 1
+
+
+def test_gemini_grounded_evidence_with_active_record(client, user_token):
+    """When a verification ID is provided, assistant grounds its answer in the active verified record."""
+    v_res = verify_medicine(VerifyRequest(
+        identifier="(01)89012345678901(10)BATCH-2026-001(17)280109(21)SER-PC-000001"
+    ))
+    assert v_res.status == "VERIFIED"
+    v_id = v_res.verification_id
+
+    headers = {"Authorization": f"Bearer {user_token}"}
+    resp = client.post(
+        "/api/ai/chat",
+        json={
+            "question": "Which batch number and manufacturer are recorded for this verification?",
+            "verification_id": v_id,
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["verification_referenced"] == v_id
+    ans = data["answer"]
+    # Should reference BATCH-2026-001 or PharmaCore
+    assert any(term in ans for term in ["BATCH-2026-001", "PharmaCore", "active", "verified", "registry"])
+
 
