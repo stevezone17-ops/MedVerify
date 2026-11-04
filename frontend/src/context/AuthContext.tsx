@@ -10,15 +10,18 @@ import {
 } from '../api/client';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isSigningOut: boolean;
   profileError: string | null;
+  logoutError: string | null;
   login: (email: string, password: string) => Promise<AuthResponse>;
   register: (name: string, email: string, password: string) => Promise<AuthResponse>;
   logout: () => Promise<void>;
   retryProfile: () => Promise<void>;
+  clearLogoutError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -27,7 +30,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => getStoredUser());
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => checkIsAuthenticated());
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSigningOut, setIsSigningOut] = useState<boolean>(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   // Synchronize and verify current user profile on boot or session change
   const loadProfile = useCallback(async () => {
@@ -91,11 +96,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem('medverify_token', session.access_token);
           await loadProfile();
         } else if (event === 'SIGNED_OUT') {
+          console.log('[MedVerify Auth] Supabase SIGNED_OUT event processed. Clearing session.');
           localStorage.removeItem('medverify_token');
           localStorage.removeItem('medverify_user');
           setUser(null);
           setIsAuthenticated(false);
           setProfileError(null);
+          setLogoutError(null);
         }
       });
 
@@ -147,18 +154,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const logout = useCallback(async () => {
-    console.log('[MedVerify Auth] Logging out user:', user?.id);
-    await apiLogout();
-    setUser(null);
-    setIsAuthenticated(false);
-    setProfileError(null);
-  }, [user]);
+  const logout = useCallback(async (): Promise<void> => {
+    if (isSigningOut) return;
+    setIsSigningOut(true);
+    setLogoutError(null);
+    try {
+      console.log('[MedVerify Auth] Initiating user sign out...');
+      await apiLogout();
+      setUser(null);
+      setIsAuthenticated(false);
+      setProfileError(null);
+      console.log('[MedVerify Auth] Sign out completed successfully. Context reset.');
+    } catch (err: any) {
+      console.error('[MedVerify Auth] Sign out operation failed:', err);
+      const msg = err?.message || 'Failed to sign out. Please check network connection and try again.';
+      setLogoutError(msg);
+      throw err;
+    } finally {
+      setIsSigningOut(false);
+    }
+  }, [isSigningOut]);
 
   const retryProfile = useCallback(async () => {
     setIsLoading(true);
     await loadProfile();
   }, [loadProfile]);
+
+  const clearLogoutError = useCallback(() => {
+    setLogoutError(null);
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -166,11 +190,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isAuthenticated,
         isLoading,
+        isSigningOut,
         profileError,
+        logoutError,
         login,
         register,
         logout,
         retryProfile,
+        clearLogoutError,
       }}
     >
       {children}
@@ -187,3 +214,4 @@ export function useAuth(): AuthContextType {
 }
 
 export default AuthContext;
+

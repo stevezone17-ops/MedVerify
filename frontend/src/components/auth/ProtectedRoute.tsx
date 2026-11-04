@@ -19,7 +19,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
   requiredRole,
 }) => {
-  const { user, isAuthenticated, isLoading, profileError, retryProfile, logout } = useAuth();
+  const { user, isAuthenticated, isLoading, isSigningOut, profileError, retryProfile, logout } = useAuth();
   const location = useLocation();
 
   // 1. Asynchronous profile & session verification in progress
@@ -144,7 +144,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
               <span>Retry Verification</span>
             </button>
             <button
+              type="button"
               onClick={() => logout()}
+              disabled={isSigningOut}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -155,12 +157,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
                 color: '#64716A',
                 fontWeight: 600,
                 fontSize: '13px',
-                cursor: 'pointer',
+                cursor: isSigningOut ? 'not-allowed' : 'pointer',
+                opacity: isSigningOut ? 0.6 : 1,
                 border: '1px solid #E1E7E1',
               }}
             >
-              <LogOut size={14} />
-              <span>Sign Out</span>
+              {isSigningOut ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />}
+              <span>{isSigningOut ? 'Signing Out...' : 'Sign Out'}</span>
             </button>
           </div>
         </div>

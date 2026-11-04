@@ -15,8 +15,10 @@ import {
   ChevronRight,
   Menu,
   X,
+  Loader2,
 } from 'lucide-react';
-import { getStoredUser, logout } from '../../api/client';
+import { getStoredUser } from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 import type { User } from '../../types';
 import CommandPalette from '../ui/CommandPalette';
 import { pulseVariants } from '../../animations/motion';
@@ -88,14 +90,17 @@ const SECTION_TITLES: Record<string, { eyebrow: string; title: string }> = {
 };
 
 export const AppLayout: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
+  const { user: authUser, logout, isSigningOut } = useAuth();
+  const [storedUser, setStoredUser] = useState<User | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
+  const user = authUser || storedUser;
+
   useEffect(() => {
-    setUser(getStoredUser());
+    setStoredUser(getStoredUser());
   }, []);
 
   // Keyboard shortcut Ctrl+K / Cmd+K
@@ -115,9 +120,17 @@ export const AppLayout: React.FC = () => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
-  const handleLogout = () => {
-    logout();
-    window.location.href = '/login';
+  const handleLogout = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (isSigningOut) return;
+    try {
+      console.log('[MedVerify AppLayout] Signing out user...');
+      await logout();
+      navigate('/login', { replace: true });
+    } catch (err: any) {
+      console.error('[MedVerify AppLayout] Sign out error:', err);
+      alert(`Sign out failed: ${err?.message || 'Please check your connection and try again.'}`);
+    }
   };
 
   const currentSection =
@@ -197,12 +210,17 @@ export const AppLayout: React.FC = () => {
             type="button"
             className="rail-footer-btn rail-footer-btn--logout"
             onClick={handleLogout}
-            title="Sign Out"
+            disabled={isSigningOut}
+            title={isSigningOut ? 'Signing out...' : 'Sign Out'}
             aria-label="Sign Out"
+            style={{
+              opacity: isSigningOut ? 0.6 : 1,
+              cursor: isSigningOut ? 'not-allowed' : 'pointer',
+            }}
           >
-            <LogOut size={16} />
+            {isSigningOut ? <Loader2 size={16} className="animate-spin" /> : <LogOut size={16} />}
             <span className="rail-tooltip" role="tooltip">
-              Sign Out
+              {isSigningOut ? 'Signing Out...' : 'Sign Out'}
             </span>
           </button>
         </div>
@@ -315,9 +333,14 @@ export const AppLayout: React.FC = () => {
                 type="button"
                 className="mobile-nav-link mobile-nav-link--logout"
                 onClick={handleLogout}
+                disabled={isSigningOut}
+                style={{
+                  opacity: isSigningOut ? 0.6 : 1,
+                  cursor: isSigningOut ? 'not-allowed' : 'pointer',
+                }}
               >
-                <LogOut size={18} />
-                <span>Sign Out</span>
+                {isSigningOut ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />}
+                <span>{isSigningOut ? 'Signing Out...' : 'Sign Out'}</span>
               </button>
             </motion.div>
           )}

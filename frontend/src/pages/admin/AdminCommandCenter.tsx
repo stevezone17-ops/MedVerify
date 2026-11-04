@@ -100,10 +100,10 @@ export const AdminCommandCenter: React.FC = () => {
       {/* Platform Header */}
       <div className="command-center-header">
         <div>
-          <span className="command-center-eyebrow">MEDVERIFY / FORENSIC CONTROL</span>
-          <h1 className="command-center-title">Verification Command Center</h1>
+          <span className="command-center-eyebrow">MEDVERIFY / ADMIN</span>
+          <h1 className="command-center-title">Verification Operations</h1>
           <p className="command-center-subtitle">
-            System-wide operational telemetry, real-time threat monitoring, and global medicine authentication streams.
+            System-wide verification activity and pharmaceutical registry management.
           </p>
         </div>
 
@@ -114,7 +114,7 @@ export const AdminCommandCenter: React.FC = () => {
             className="command-center-ai-btn"
             title="Launch AI Verification Analyst for automated trend synthesis"
           >
-            <Sparkles size={14} className="text-amber-400" />
+            <Sparkles size={14} className="text-amber-600" />
             <span>AI Analyst</span>
           </button>
 
@@ -124,86 +124,86 @@ export const AdminCommandCenter: React.FC = () => {
             className="command-center-refresh-btn"
             title="Refresh Operational Metrics"
           >
-            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+            <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
             <span>{isRefreshing ? 'Syncing...' : 'Sync Telemetry'}</span>
           </button>
 
           <Link to="/admin/scanner" className="command-center-primary-btn">
-            <ScanLine size={16} />
+            <ScanLine size={15} />
             <span>Launch Forensic Scanner</span>
           </Link>
         </div>
       </div>
 
-      {/* Global Operational KPI Cards — 5 Real Dashboard Cards */}
+      {/* Global Operational KPI Cards — 5 Real Enterprise Reporting Metrics */}
       <div className="command-center-kpi-grid">
         {/* 1. TOTAL VERIFICATIONS */}
         <div className="command-kpi-card">
           <div className="command-kpi-header">
-            <span className="command-kpi-label">TOTAL VERIFICATIONS</span>
-            <Activity size={18} className="command-kpi-icon" />
+            <span className="command-kpi-label">Total Verifications</span>
+            <Activity size={16} className="command-kpi-icon" />
           </div>
-          <div className="command-kpi-val">
-            <AnimatedNumber value={total} />
+          <div className="command-kpi-val tabular-nums">
+            {total.toLocaleString()}
           </div>
           <div className="command-kpi-sub">
-            <span>System-Wide Scans</span>
+            <span>All clinical channels</span>
           </div>
         </div>
 
         {/* 2. ACTIVE CATALOG ITEMS */}
         <div className="command-kpi-card catalog">
           <div className="command-kpi-header">
-            <span className="command-kpi-label">ACTIVE CATALOG ITEMS</span>
-            <Package size={18} className="command-kpi-icon catalog" />
+            <span className="command-kpi-label">Active Catalog Items</span>
+            <Package size={16} className="command-kpi-icon catalog" />
           </div>
-          <div className="command-kpi-val catalog">
-            <AnimatedNumber value={analytics?.active_medicines || 10} />
+          <div className="command-kpi-val catalog tabular-nums">
+            {(analytics?.active_medicines || 10).toLocaleString()}
           </div>
           <div className="command-kpi-sub catalog">
-            <span>Authorized Formulas</span>
+            <span>Authorized formulas</span>
           </div>
         </div>
 
         {/* 3. VERIFIED SPECIMENS */}
         <div className="command-kpi-card verified">
           <div className="command-kpi-header">
-            <span className="command-kpi-label">VERIFIED SPECIMENS</span>
-            <ShieldCheck size={18} className="command-kpi-icon verified" />
+            <span className="command-kpi-label">Verified Specimens</span>
+            <ShieldCheck size={16} className="command-kpi-icon verified" />
           </div>
-          <div className="command-kpi-val verified">
-            <AnimatedNumber value={verifiedCount} />
+          <div className="command-kpi-val verified tabular-nums">
+            {verifiedCount.toLocaleString()}
           </div>
           <div className="command-kpi-sub verified">
-            <span>Authentic Compliance <strong>{verifiedRate}%</strong></span>
+            <span>Compliance rate: <strong>{verifiedRate}%</strong></span>
           </div>
         </div>
 
         {/* 4. REVIEW REQUIRED */}
         <div className="command-kpi-card review">
           <div className="command-kpi-header">
-            <span className="command-kpi-label">REVIEW REQUIRED</span>
-            <AlertTriangle size={18} className="command-kpi-icon review" />
+            <span className="command-kpi-label">Review Required</span>
+            <AlertTriangle size={16} className="command-kpi-icon review" />
           </div>
-          <div className="command-kpi-val review">
-            <AnimatedNumber value={reviewCount} />
+          <div className="command-kpi-val review tabular-nums">
+            {reviewCount.toLocaleString()}
           </div>
           <div className="command-kpi-sub review">
-            <span>Expired / Incomplete Payloads</span>
+            <span>Flagged for manual review</span>
           </div>
         </div>
 
         {/* 5. CRITICAL ANOMALIES */}
         <div className="command-kpi-card suspicious">
           <div className="command-kpi-header">
-            <span className="command-kpi-label">CRITICAL ANOMALIES</span>
-            <ShieldAlert size={18} className="command-kpi-icon suspicious" />
+            <span className="command-kpi-label">Critical Anomalies</span>
+            <ShieldAlert size={16} className="command-kpi-icon suspicious" />
           </div>
-          <div className="command-kpi-val suspicious">
-            <AnimatedNumber value={suspiciousCount + notFoundCount} />
+          <div className="command-kpi-val suspicious tabular-nums">
+            {(suspiciousCount + notFoundCount).toLocaleString()}
           </div>
           <div className="command-kpi-sub suspicious">
-            <span>{suspiciousCount} Suspicious · {notFoundCount} Unregistered</span>
+            <span>{suspiciousCount} suspicious · {notFoundCount} uncataloged</span>
           </div>
         </div>
       </div>
@@ -213,59 +213,86 @@ export const AdminCommandCenter: React.FC = () => {
         {/* Verification Engine & System Status */}
         <div className="command-center-panel health-panel">
           <div className="command-panel-header">
-            <h3>Infrastructure Integrity</h3>
-            <span className="command-panel-badge live">REAL-TIME TELEMETRY</span>
+            <div>
+              <span className="command-eyebrow">SYSTEM STATUS</span>
+              <h3 className="command-section-title">Infrastructure Integrity</h3>
+            </div>
+            <span className="infra-status-live-tag">
+              <span className="infra-live-dot" />
+              <span>Operational Telemetry</span>
+            </span>
           </div>
 
-          <div className="command-infra-list">
-            <div className="command-infra-row">
-              <div className="infra-row-left">
-                <span className="infra-status-dot online" />
-                <div>
-                  <strong>Verification Scoring Engine</strong>
-                  <p>6-Factor Weighted Deterministic Model</p>
-                </div>
-              </div>
-              <span className="infra-tag">OPERATIONAL</span>
-            </div>
-
-            <div className="command-infra-row">
-              <div className="infra-row-left">
-                <span className="infra-status-dot online" />
-                <div>
-                  <strong>{health?.components?.database?.name ?? 'Supabase PostgreSQL'}</strong>
-                  <p>Ping Latency: {health?.components?.database?.latency_ms ?? 20}ms</p>
-                </div>
-              </div>
-              <span className="infra-tag">CONNECTED</span>
-            </div>
-
-            <div className="command-infra-row">
-              <div className="infra-row-left">
-                <span className="infra-status-dot online" />
-                <div>
-                  <strong>Medicine Registry Catalog</strong>
-                  <p>{health?.components?.registry?.active_records ?? 10} Authorized Product Codes</p>
-                </div>
-              </div>
-              <span className="infra-tag">HEALTHY</span>
-            </div>
-
-            <div className="command-infra-row">
-              <div className="infra-row-left">
-                <span className="infra-status-dot online" />
-                <div>
-                  <strong>FastAPI Core Gateway</strong>
-                  <p>Environment: Production · v1.0.0</p>
-                </div>
-              </div>
-              <span className="infra-tag">HEALTHY</span>
-            </div>
+          <div className="infra-table-wrapper">
+            <table className="infra-status-table" aria-label="Infrastructure services status">
+              <thead>
+                <tr>
+                  <th scope="col" style={{ width: '32%' }}>Service</th>
+                  <th scope="col" style={{ width: '42%' }}>Description</th>
+                  <th scope="col" style={{ width: '14%' }}>Status</th>
+                  <th scope="col" style={{ width: '12%', textAlign: 'right' }}>Latency</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="infra-cell-service">
+                    <strong>Verification Scoring Engine</strong>
+                  </td>
+                  <td className="infra-cell-desc">6-Factor deterministic weighted model</td>
+                  <td className="infra-cell-status">
+                    <span className="status-pill status-pill--operational">Operational</span>
+                  </td>
+                  <td className="infra-cell-latency" style={{ textAlign: 'right' }}>&lt; 5ms</td>
+                </tr>
+                <tr>
+                  <td className="infra-cell-service">
+                    <strong>Database Connection</strong>
+                  </td>
+                  <td className="infra-cell-desc">{health?.components?.database?.name ?? 'Supabase PostgreSQL'}</td>
+                  <td className="infra-cell-status">
+                    <span className="status-pill status-pill--connected">
+                      {health?.components?.database?.status === 'UP' || health?.overall_status === 'healthy'
+                        ? 'Connected'
+                        : 'Unavailable'}
+                    </span>
+                  </td>
+                  <td className="infra-cell-latency" style={{ textAlign: 'right' }}>
+                    {health?.components?.database?.latency_ms ? `${health.components.database.latency_ms}ms` : '20ms'}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="infra-cell-service">
+                    <strong>Medicine Registry</strong>
+                  </td>
+                  <td className="infra-cell-desc">
+                    {health?.components?.registry?.active_records ?? 10} authorized product formulas
+                  </td>
+                  <td className="infra-cell-status">
+                    <span className="status-pill status-pill--healthy">
+                      {health?.components?.registry?.status === 'UP' || health?.overall_status === 'healthy'
+                        ? 'Healthy'
+                        : 'Unavailable'}
+                    </span>
+                  </td>
+                  <td className="infra-cell-latency" style={{ textAlign: 'right' }}>—</td>
+                </tr>
+                <tr>
+                  <td className="infra-cell-service">
+                    <strong>FastAPI Gateway</strong>
+                  </td>
+                  <td className="infra-cell-desc">Production environment · v1.0.0</td>
+                  <td className="infra-cell-status">
+                    <span className="status-pill status-pill--healthy">Healthy</span>
+                  </td>
+                  <td className="infra-cell-latency" style={{ textAlign: 'right' }}>12ms</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           {/* Verification Channel Distribution */}
           <div className="command-channel-breakdown">
-            <span className="command-channel-title">INGESTION METHOD BREAKDOWN</span>
+            <span className="command-channel-title">Ingestion Channel Distribution</span>
             <div className="command-channel-chips">
               <div className="channel-chip">
                 <ScanLine size={13} />

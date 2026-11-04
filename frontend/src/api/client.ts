@@ -441,11 +441,17 @@ export async function register(name: string, email: string, password: string): P
 }
 
 export async function logout(): Promise<void> {
+  console.log('[MedVerify Auth] Performing logout...');
   if (isSupabaseConfigured() && supabase) {
     try {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('[MedVerify Auth] Supabase signOut error:', error);
+        throw error;
+      }
     } catch (e) {
-      console.warn('[MedVerify Auth] Supabase signOut error:', e);
+      console.error('[MedVerify Auth] Supabase signOut error:', e);
+      throw e;
     }
   }
   localStorage.removeItem('medverify_token');

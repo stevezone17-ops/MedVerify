@@ -15,8 +15,10 @@ import {
   CheckCircle2,
   Lock,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
-import { getStoredUser, logout } from '../../api/client';
+import { getStoredUser } from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 import type { User } from '../../types';
 import { AskMedVerifyDrawer } from '../ai/AskMedVerifyDrawer';
 
@@ -55,19 +57,30 @@ const USER_NAV_ITEMS: NavItem[] = [
 ];
 
 export const UserShell: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
+  const { user: authUser, logout, isSigningOut } = useAuth();
+  const [storedUser, setStoredUser] = useState<User | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [askMedVerifyOpen, setAskMedVerifyOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
+  const user = authUser || storedUser;
+
   useEffect(() => {
-    setUser(getStoredUser());
+    setStoredUser(getStoredUser());
   }, []);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  const handleLogout = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (isSigningOut) return;
+    try {
+      console.log('[MedVerify User] Signing out user...');
+      await logout();
+      navigate('/login', { replace: true });
+    } catch (err: any) {
+      console.error('[MedVerify User] Sign out error:', err);
+      alert(`Sign out failed: ${err?.message || 'Please check your connection and try again.'}`);
+    }
   };
 
   const isActive = (to: string) => {
@@ -186,13 +199,19 @@ export const UserShell: React.FC = () => {
 
 
             <button
+              type="button"
               onClick={handleLogout}
+              disabled={isSigningOut}
               className="user-shell-logout-btn"
-              title="Sign Out of MedVerify"
+              title={isSigningOut ? 'Signing out...' : 'Sign Out of MedVerify'}
               aria-label="Sign out"
+              style={{
+                opacity: isSigningOut ? 0.6 : 1,
+                cursor: isSigningOut ? 'not-allowed' : 'pointer',
+              }}
             >
-              <LogOut size={16} />
-              <span className="user-shell-logout-text">Sign Out</span>
+              {isSigningOut ? <Loader2 size={16} className="animate-spin" /> : <LogOut size={16} />}
+              <span className="user-shell-logout-text">{isSigningOut ? 'Signing Out...' : 'Sign Out'}</span>
             </button>
 
             {/* Mobile Hamburger Button */}
@@ -256,14 +275,20 @@ export const UserShell: React.FC = () => {
                 )}
 
                 <button
-                  onClick={() => {
+                  type="button"
+                  disabled={isSigningOut}
+                  onClick={async (e) => {
                     setMobileMenuOpen(false);
-                    handleLogout();
+                    await handleLogout(e);
                   }}
                   className="user-shell-mobile-logout"
+                  style={{
+                    opacity: isSigningOut ? 0.6 : 1,
+                    cursor: isSigningOut ? 'not-allowed' : 'pointer',
+                  }}
                 >
-                  <LogOut size={18} />
-                  <span>Sign Out</span>
+                  {isSigningOut ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />}
+                  <span>{isSigningOut ? 'Signing Out...' : 'Sign Out'}</span>
                 </button>
               </div>
             </motion.div>

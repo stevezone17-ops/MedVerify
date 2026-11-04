@@ -19,14 +19,15 @@ import {
 import { useNavigate, Link } from '../../router';
 import {
   getUserProfile,
-  logout,
   getStoredUser,
   getNotificationPreferences,
   updateNotificationPreferences,
 } from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 import type { UserProfile as UserProfileType, NotificationPreferences } from '../../types';
 
 export const UserProfile: React.FC = () => {
+  const { logout, isSigningOut } = useAuth();
   const [profile, setProfile] = useState<UserProfileType | null>(null);
   const [loading, setLoading] = useState(true);
   const [prefs, setPrefs] = useState<NotificationPreferences | null>(null);
@@ -65,9 +66,17 @@ export const UserProfile: React.FC = () => {
     }
   };
 
-  const handleSignOut = () => {
-    logout();
-    navigate('/login');
+  const handleSignOut = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (isSigningOut) return;
+    try {
+      console.log('[MedVerify Profile] Signing out user...');
+      await logout();
+      navigate('/login', { replace: true });
+    } catch (err: any) {
+      console.error('[MedVerify Profile] Sign out error:', err);
+      alert(`Sign out failed: ${err?.message || 'Please check your connection and try again.'}`);
+    }
   };
 
   return (
@@ -142,9 +151,18 @@ export const UserProfile: React.FC = () => {
           </div>
 
           <div className="user-profile-actions">
-            <button onClick={handleSignOut} className="user-profile-logout-btn">
-              <LogOut size={16} />
-              <span>Sign Out of Account</span>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={isSigningOut}
+              className="user-profile-logout-btn"
+              style={{
+                opacity: isSigningOut ? 0.6 : 1,
+                cursor: isSigningOut ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {isSigningOut ? <Loader2 size={16} className="animate-spin" /> : <LogOut size={16} />}
+              <span>{isSigningOut ? 'Signing Out...' : 'Sign Out of Account'}</span>
             </button>
           </div>
         </div>

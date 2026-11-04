@@ -1,8 +1,6 @@
 import React from 'react';
-import { motion } from 'framer-motion';
-import { AlertTriangle, XOctagon, HelpCircle, Layers, CheckCircle } from 'lucide-react';
+import { Filter, Check } from 'lucide-react';
 import type { VerificationStatus } from '../../types';
-import AnimatedNumber from './AnimatedNumber';
 
 interface ActiveInvestigationsQueueProps {
   suspiciousCount: number;
@@ -26,93 +24,112 @@ export const ActiveInvestigationsQueue: React.FC<ActiveInvestigationsQueueProps>
   const categories = [
     {
       id: 'SUSPICIOUS' as const,
-      label: 'Suspicious / Cloned',
+      category: 'Suspicious / Cloned',
+      description: 'Serial collision detected or anti-tamper security matrix compromised',
       count: suspiciousCount,
-      icon: XOctagon,
-      themeClass: 'anomaly-pill--suspicious',
-      hint: 'Serial collisions or packaging tampered',
+      severity: 'critical' as const,
     },
     {
       id: 'REVIEW' as const,
-      label: 'Review Required',
+      category: 'Review Required',
+      description: 'Regulatory expiry breach, batch warning, or incomplete payload',
       count: reviewCount,
-      icon: AlertTriangle,
-      themeClass: 'anomaly-pill--review',
-      hint: 'Expiry or batch anomaly detected',
+      severity: 'warning' as const,
     },
     {
       id: 'NOT_FOUND' as const,
-      label: 'Not Registered',
+      category: 'Not Registered',
+      description: 'GTIN or packaging code uncataloged in national manufacturer ledger',
       count: notFoundCount,
-      icon: HelpCircle,
-      themeClass: 'anomaly-pill--notfound',
-      hint: 'Absent from official manufacturer ledger',
+      severity: 'neutral' as const,
     },
   ];
 
   return (
-    <div className={`investigations-queue-console ${className}`}>
-      <div className="investigations-queue-console__header">
-        <div className="investigations-queue-console__title-wrap">
+    <div className={`anomaly-triage-panel ${className}`}>
+      <div className="anomaly-triage-header">
+        <div>
           <span className="command-eyebrow">ANOMALY TRIAGE QUEUE</span>
           <h3 className="command-section-title">Active Investigations</h3>
+          <p className="command-section-desc">
+            Classified verification exceptions requiring compliance verification or audit isolation.
+          </p>
         </div>
-        <div className="investigations-queue-console__summary">
-          <span className="investigations-queue-console__count-badge">
-            {totalAnomalies} Flagged
+        <div className="anomaly-triage-header-actions">
+          <span className="anomaly-triage-flagged-tag">
+            {totalAnomalies} {totalAnomalies === 1 ? 'anomaly' : 'anomalies'} total
           </span>
           <button
             type="button"
-            className={`btn-filter-toggle ${activeFilter === 'ALL' ? 'is-active' : ''}`}
+            className={`btn-triage-reset ${activeFilter === 'ALL' ? 'is-active' : ''}`}
             onClick={() => onFilterChange('ALL')}
-            title="Reset filter to all inspections"
+            title="Reset active filter to display all verifications"
           >
             Show All
           </button>
         </div>
       </div>
 
-      <p className="investigations-queue-console__desc">
-        Direct-action filter: click any category below to isolate matching forensic events.
-      </p>
+      <div className="anomaly-triage-table-wrapper">
+        <table className="anomaly-triage-table" aria-label="Anomaly Triage Investigations">
+          <thead>
+            <tr>
+              <th scope="col" style={{ width: '28%' }}>Category</th>
+              <th scope="col" style={{ width: '46%' }}>Description</th>
+              <th scope="col" style={{ width: '12%', textAlign: 'right' }}>Count</th>
+              <th scope="col" style={{ width: '14%', textAlign: 'center' }}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((cat) => {
+              const isSelected = activeFilter === cat.id;
 
-      <div className="investigations-queue-console__list">
-        {categories.map((cat) => {
-          const Icon = cat.icon;
-          const isSelected = activeFilter === cat.id;
-
-          return (
-            <motion.button
-              key={cat.id}
-              type="button"
-              className={`investigation-row-item ${cat.themeClass} ${isSelected ? 'is-selected' : ''}`}
-              onClick={() => onFilterChange(isSelected ? 'ALL' : cat.id)}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              role="button"
-              aria-pressed={isSelected}
-            >
-              <div className="investigation-row-item__left">
-                <div className="investigation-row-item__icon-wrap">
-                  <Icon size={16} />
-                </div>
-                <div className="investigation-row-item__details">
-                  <span className="investigation-row-item__label">{cat.label}</span>
-                  <span className="investigation-row-item__hint">{cat.hint}</span>
-                </div>
-              </div>
-
-              <div className="investigation-row-item__right">
-                <span className="investigation-row-item__number">
-                  <AnimatedNumber value={cat.count} />
-                </span>
-                <span className="investigation-row-item__state">
-                  {isSelected ? 'Filtering' : 'Filter'}
-                </span>
-              </div>
-            </motion.button>
-          );
-        })}
+              return (
+                <tr
+                  key={cat.id}
+                  className={`anomaly-triage-row ${isSelected ? 'is-selected' : ''}`}
+                  onClick={() => onFilterChange(isSelected ? 'ALL' : cat.id)}
+                >
+                  <td className="anomaly-cell-category">
+                    <span className={`severity-indicator severity-indicator--${cat.severity}`} aria-hidden="true" />
+                    <span className="anomaly-category-name">{cat.category}</span>
+                  </td>
+                  <td className="anomaly-cell-desc">
+                    <span className="anomaly-desc-text">{cat.description}</span>
+                  </td>
+                  <td className="anomaly-cell-count" style={{ textAlign: 'right' }}>
+                    <span className={`anomaly-count-badge ${cat.count > 0 ? `anomaly-count-badge--${cat.severity}` : 'anomaly-count-badge--zero'} tabular-nums`}>
+                      {cat.count.toLocaleString()}
+                    </span>
+                  </td>
+                  <td className="anomaly-cell-action" style={{ textAlign: 'center' }}>
+                    <button
+                      type="button"
+                      className={`btn-triage-filter ${isSelected ? 'btn-triage-filter--active' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onFilterChange(isSelected ? 'ALL' : cat.id);
+                      }}
+                      aria-pressed={isSelected}
+                    >
+                      {isSelected ? (
+                        <>
+                          <Check size={12} />
+                          <span>Active</span>
+                        </>
+                      ) : (
+                        <>
+                          <Filter size={12} />
+                          <span>Filter</span>
+                        </>
+                      )}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

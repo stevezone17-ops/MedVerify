@@ -20,8 +20,10 @@ import {
   Radio,
   Server,
   Terminal,
+  Loader2,
 } from 'lucide-react';
-import { getStoredUser, logout, getAnalytics, getAdminSystemHealth } from '../../api/client';
+import { getStoredUser, getAnalytics, getAdminSystemHealth } from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 import type { User, AnalyticsData, SystemHealthData } from '../../types';
 import CommandPalette from '../ui/CommandPalette';
 import { pulseVariants } from '../../animations/motion';
@@ -108,7 +110,8 @@ const ADMIN_NAV_GROUPS: NavGroup[] = [
 ];
 
 export const AdminShell: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
+  const { user: authUser, logout, isSigningOut } = useAuth();
+  const [storedUser, setStoredUser] = useState<User | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [health, setHealth] = useState<SystemHealthData | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -116,8 +119,10 @@ export const AdminShell: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const user = authUser || storedUser;
+
   useEffect(() => {
-    setUser(getStoredUser());
+    setStoredUser(getStoredUser());
     Promise.all([getAnalytics(), getAdminSystemHealth()])
       .then(([a, h]) => {
         setAnalytics(a);
@@ -126,9 +131,17 @@ export const AdminShell: React.FC = () => {
       .catch((e) => console.error('Admin shell initial telemetry fetch failed:', e));
   }, []);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  const handleLogout = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (isSigningOut) return;
+    try {
+      console.log('[MedVerify Admin] Signing out administrator...');
+      await logout();
+      navigate('/login', { replace: true });
+    } catch (err: any) {
+      console.error('[MedVerify Admin] Sign out error:', err);
+      alert(`Sign out failed: ${err?.message || 'Please check your connection and try again.'}`);
+    }
   };
 
   const isActive = (to: string) => {
@@ -162,16 +175,16 @@ export const AdminShell: React.FC = () => {
           </button>
         </div>
 
-        {/* Live Engine Status Mini-Badge */}
+        {/* Live Engine Status Card */}
         <div className="admin-shell-engine-status-card">
           <div className="admin-shell-status-indicator">
-            <span className="admin-shell-status-dot pulse" />
-            <span className="admin-shell-status-label">ENGINE ONLINE</span>
+            <span className="admin-shell-status-dot" />
+            <span className="admin-shell-status-label">Operational Engine</span>
           </div>
           <div className="admin-shell-status-sub">
             <span>Latency: {health?.components?.database?.latency_ms ?? 20}ms</span>
-            <span>·</span>
-            <span>{analytics?.active_medicines ?? 10} Active Meds</span>
+            <span className="admin-shell-status-sep">·</span>
+            <span>{analytics?.active_medicines ?? 10} Active Formulas</span>
           </div>
         </div>
 
@@ -224,11 +237,18 @@ export const AdminShell: React.FC = () => {
               <span className="admin-shell-admin-badge">SYSTEM ADMIN</span>
             </div>
             <button
+              type="button"
               onClick={handleLogout}
+              disabled={isSigningOut}
               className="admin-shell-signout-btn"
-              title="Sign Out of Admin Console"
+              title={isSigningOut ? 'Signing out...' : 'Sign Out of Admin Console'}
+              aria-label="Sign out"
+              style={{
+                opacity: isSigningOut ? 0.6 : 1,
+                cursor: isSigningOut ? 'not-allowed' : 'pointer',
+              }}
             >
-              <LogOut size={15} />
+              {isSigningOut ? <Loader2 size={15} className="animate-spin" /> : <LogOut size={15} />}
             </button>
           </div>
         </div>
@@ -249,31 +269,41 @@ export const AdminShell: React.FC = () => {
 
             <div className="admin-shell-breadcrumb">
               <span className="admin-shell-breadcrumb-root">MEDVERIFY / ADMIN</span>
-              <ChevronRight size={14} className="admin-shell-breadcrumb-sep" />
+              <ChevronRight size={13} className="admin-shell-breadcrumb-sep" />
               <span className="admin-shell-breadcrumb-current">OPERATIONAL CONSOLE</span>
             </div>
           </div>
 
           {/* Quick Metrics Ticker */}
-          <div className="admin-shell-topbar-center">
+          <div className="admin-shell-topbar-center" role="region" aria-label="System verification metrics">
             <div className="admin-shell-ticker-item">
-              <span className="admin-shell-ticker-label">TOTAL SCANS:</span>
-              <span className="admin-shell-ticker-value">{analytics?.total_verifications ?? 0}</span>
+              <span className="admin-shell-ticker-label">Total Scans:</span>
+              <span className="admin-shell-ticker-value tabular-nums">
+                {(analytics?.total_verifications ?? 0).toLocaleString()}
+              </span>
             </div>
-            <div className="admin-shell-ticker-sep">|</div>
+            <span className="admin-shell-ticker-sep" aria-hidden="true">·</span>
             <div className="admin-shell-ticker-item">
-              <span className="admin-shell-ticker-label">VERIFIED RATE:</span>
-              <span className="admin-shell-ticker-value verified">
+              <span className="admin-shell-ticker-label">Verified Rate:</span>
+              <span className="admin-shell-ticker-value verified tabular-nums">
                 {analytics?.total_verifications
                   ? `${Math.round(((analytics?.status_breakdown?.VERIFIED || 0) / analytics.total_verifications) * 100)}%`
                   : '100%'}
               </span>
             </div>
-            <div className="admin-shell-ticker-sep">|</div>
+            <span className="admin-shell-ticker-sep" aria-hidden="true">·</span>
             <div className="admin-shell-ticker-item">
-              <span className="admin-shell-ticker-label">ANOMALIES:</span>
-              <span className="admin-shell-ticker-value anomaly">
-                {(analytics?.status_breakdown?.SUSPICIOUS || 0) + (analytics?.status_breakdown?.NOT_FOUND || 0)}
+              <span className="admin-shell-ticker-label">Anomalies:</span>
+              <span
+                className={`admin-shell-ticker-value tabular-nums ${
+                  ((analytics?.status_breakdown?.SUSPICIOUS || 0) + (analytics?.status_breakdown?.NOT_FOUND || 0)) > 0
+                    ? 'anomaly'
+                    : ''
+                }`}
+              >
+                {(
+                  (analytics?.status_breakdown?.SUSPICIOUS || 0) + (analytics?.status_breakdown?.NOT_FOUND || 0)
+                ).toLocaleString()}
               </span>
             </div>
           </div>
@@ -281,8 +311,10 @@ export const AdminShell: React.FC = () => {
           {/* Search / Command Palette & User Actions */}
           <div className="admin-shell-topbar-right">
             <button
+              type="button"
               onClick={() => setIsCommandPaletteOpen(true)}
               className="admin-shell-command-trigger"
+              aria-label="Search operations"
             >
               <Search size={14} />
               <span>Search operations...</span>
