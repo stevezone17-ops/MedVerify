@@ -37,6 +37,18 @@ class ExplainVerificationRequest(BaseModel):
     language: str = Field("en", description="Target language code: en, hi, ml, ta, kn")
 
 
+class VerificationExplanationPayload(BaseModel):
+    summary: str = Field(..., description="Grounded, plain-language explanation of verification outcome")
+    what_was_checked: List[str] = Field(default_factory=list, description="Specific parameters evaluated")
+    matched_evidence: List[str] = Field(default_factory=list, description="Items matching registry specifications")
+    concerns: List[str] = Field(default_factory=list, description="Anomalies, mismatches, or missing parameters")
+    next_steps: List[str] = Field(default_factory=list, description="Recommended safe consumer actions")
+    disclaimer: str = Field(
+        "MedVerify explanations are informational and based strictly on manufacturer registry data. Consult a licensed pharmacist or physician for medical advice.",
+        description="Mandatory regulatory disclaimer"
+    )
+
+
 class VerificationExplanation(BaseModel):
     summary: str = Field(..., description="Grounded, plain-language explanation of verification outcome")
     what_was_checked: List[str] = Field(default_factory=list, description="Specific parameters evaluated")
@@ -49,7 +61,7 @@ class VerificationExplanation(BaseModel):
     )
     style: str = "simple"
     language: str = "en"
-    model_used: str = "gpt-5.6-luna"
+    model_used: str = "gemini-3.5-flash"
     verification_id: str = ""
     status: str = "UNKNOWN"
     confidence_score: int = 0
@@ -66,13 +78,19 @@ class AskMedVerifyRequest(BaseModel):
     language: str = Field("en", description="Preferred response language")
 
 
+class AskMedVerifyChatPayload(BaseModel):
+    answer: str = Field(..., description="Grounded response adhering to medical safety boundaries")
+    grounded_facts: List[str] = Field(default_factory=list, description="Verified facts referenced from registry or MedVerify policy")
+    safety_notice: str = Field("MedVerify does not provide personalized medical advice or treatment recommendations.")
+
+
 class AskMedVerifyResponse(BaseModel):
     answer: str = Field(..., description="Grounded response adhering to medical safety boundaries")
     grounded_facts: List[str] = Field(default_factory=list, description="Verified facts referenced from registry or MedVerify policy")
     verification_referenced: Optional[str] = None
     safety_notice: str = "MedVerify does not provide personalized medical advice or treatment recommendations."
     conversation_id: str = ""
-    model_used: str = "gpt-5.6-luna"
+    model_used: str = "gemini-3.5-flash"
 
 
 # ---------------------------------------------------------------------------
@@ -104,13 +122,21 @@ class AdminAIAnalyzeRequest(BaseModel):
     time_range: str = Field("24h", description="Time window for aggregation: 24h, 7d, 30d, all")
 
 
+class AdminAIAnalyzePayload(BaseModel):
+    summary: str = Field(..., description="Executive summary of verification operations and findings")
+    key_findings: List[str] = Field(default_factory=list, description="Notable data patterns and forensic signals")
+    risk_assessment: str = Field(..., description="Evaluation of counterfeit threat levels and compromised batches")
+    actionable_recommendations: List[str] = Field(default_factory=list, description="Specific follow-up steps for admins")
+    metrics_analyzed: Dict[str, Any] = Field(default_factory=dict, description="Aggregated metrics fed into the analysis")
+
+
 class AdminAIAnalyzeResponse(BaseModel):
     summary: str = Field(..., description="Executive summary of verification operations and findings")
     key_findings: List[str] = Field(default_factory=list, description="Notable data patterns and forensic signals")
     risk_assessment: str = Field(..., description="Evaluation of counterfeit threat levels and compromised batches")
     actionable_recommendations: List[str] = Field(default_factory=list, description="Specific follow-up steps for admins")
     metrics_analyzed: Dict[str, Any] = Field(default_factory=dict, description="Aggregated metrics fed into the analysis")
-    model_used: str = "gpt-5.6-luna"
+    model_used: str = "gemini-3.5-flash"
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +144,8 @@ class AdminAIAnalyzeResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class AIHealthResponse(BaseModel):
-    available: bool = Field(..., description="Whether OpenAI LLM integration is active and configured")
-    provider: str = Field("openai", description="Active AI provider")
+    available: bool = Field(..., description="Whether Google Gemini integration is active and configured")
+    provider: str = Field("google-gemini", description="Active AI provider")
     model: str = Field(..., description="Configured model identifier")
+    active_model: str = Field("gemini-3.5-flash", description="Currently active and verified model")
     reason: Optional[str] = Field(None, description="Failure reason if unavailable")

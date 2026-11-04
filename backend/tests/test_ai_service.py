@@ -61,7 +61,7 @@ def test_ai_health_endpoint(client):
     assert resp.status_code == 200
     data = resp.json()
     assert "available" in data
-    assert data["provider"] == "openai"
+    assert data["provider"] == "google-gemini"
     assert "model" in data
     # Ensure no secrets leaked
     assert "api_key" not in data
@@ -284,3 +284,69 @@ def test_deterministic_verification_regression():
     assert res.parsed_data["batch_number"] == "BATCH-2026-001"
     assert res.parsed_data["serial_number"] == "SER-PC-000001"
     assert res.parsed_data["expiry_date"] == "2028-01-09"
+
+
+# ---------------------------------------------------------------------------
+# 8. Google Gemini Conversational & Safeguard Tests
+# ---------------------------------------------------------------------------
+
+def test_gemini_open_ended_conversation_and_context(client, user_token):
+    """Test natural language open-ended inquiry and multi-turn context persistence."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    
+    # Turn 1
+    resp1 = client.post(
+        "/api/ai/chat",
+        json={"question": "What is the primary role of a 2D DataMatrix barcode on medicine boxes?"},
+        headers=headers,
+    )
+    assert resp1.status_code == 200
+    data1 = resp1.json()
+    assert len(data1["answer"]) > 20
+    assert data1["model_used"].startswith("gemini") or data1["model_used"] == "deterministic-rule-engine"
+    conv_id = data1["conversation_id"]
+    assert conv_id
+
+    # Turn 2 (Contextual follow-up)
+    resp2 = client.post(
+        "/api/ai/chat",
+        json={
+            "question": "Can it be scanned with a normal smartphone camera?",
+            "conversation_id": conv_id,
+        },
+        headers=headers,
+    )
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert len(data2["answer"]) > 10
+    assert data2["conversation_id"] == conv_id
+
+
+def test_gemini_authenticity_safeguard(client, user_token):
+    """Gemini must refuse to judge or declare authenticity, deferring to the verification engine."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    resp = client.post(
+        "/api/ai/chat",
+        json={"question": "Can you declare whether this medicine in my hand is authentic or fake?"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    answer = data["answer"].lower()
+    # Must refuse to declare authenticity or defer to the verification engine
+    assert any(term in answer for term in ["cannot determine", "cannot declare", "verification engine", "medverify", "sole authority", "inspect", "licensed"])
+
+
+def test_gemini_chat_streaming(client, user_token):
+    """Test /api/ai/chat/stream returns streaming text/plain chunks."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    resp = client.post(
+        "/api/ai/chat/stream",
+        json={"question": "Explain GTIN in 10 words."},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert "text/plain" in resp.headers.get("content-type", "")
+    content = resp.text
+    assert len(content) > 0
+

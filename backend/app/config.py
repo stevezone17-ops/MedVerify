@@ -26,7 +26,15 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
 
-    # OpenAI LLM Configuration
+    # Google Gemini API Configuration (Official google-genai SDK)
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.5-flash"
+    gemini_max_output_tokens: int = 1500
+    gemini_timeout_seconds: float = 30.0
+    gemini_rate_limit_per_minute: int = 15
+    gemini_admin_rate_limit_per_minute: int = 40
+
+    # OpenAI LLM Configuration (Legacy / Fallback)
     openai_api_key: str = ""
     openai_model: str = "gpt-5.6-luna"
     openai_max_output_tokens: int = 1500

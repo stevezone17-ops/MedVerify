@@ -21,11 +21,13 @@ import {
   Server,
   Terminal,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { getStoredUser, getAnalytics, getAdminSystemHealth } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import type { User, AnalyticsData, SystemHealthData } from '../../types';
 import CommandPalette from '../ui/CommandPalette';
+import { AskMedVerifyDrawer } from '../ai/AskMedVerifyDrawer';
 import { pulseVariants } from '../../animations/motion';
 
 interface NavGroup {
@@ -115,6 +117,7 @@ export const AdminShell: React.FC = () => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [health, setHealth] = useState<SystemHealthData | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [askMedVerifyOpen, setAskMedVerifyOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -321,6 +324,17 @@ export const AdminShell: React.FC = () => {
               <kbd>Ctrl K</kbd>
             </button>
 
+            <button
+              type="button"
+              onClick={() => setAskMedVerifyOpen(true)}
+              className="admin-shell-portal-btn"
+              title="Open Gemini Conversational Assistant"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Sparkles size={13} />
+              <span>AI Assistant</span>
+            </button>
+
             <NavLink to="/verify" className="admin-shell-portal-btn" title="Open Consumer Verification Portal">
               <ScanLine size={13} />
               <span>Open Consumer Portal</span>
@@ -338,6 +352,12 @@ export const AdminShell: React.FC = () => {
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
+      />
+
+      {/* MedVerify Google Gemini Conversational Assistant */}
+      <AskMedVerifyDrawer
+        isOpen={askMedVerifyOpen}
+        onClose={() => setAskMedVerifyOpen(false)}
       />
     </div>
   );

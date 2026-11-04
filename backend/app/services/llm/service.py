@@ -1,11 +1,12 @@
-"""MedVerify LLM Service.
+"""MedVerify LLM Service powered by Google Gemini.
 
 Orchestrates:
 1. Explain My Result (grounded, multilingual, simple/technical)
-2. Ask MedVerify assistant (contextual, conversational memory, strict medical safety)
+2. Ask MedVerify assistant (open-ended conversational AI, multi-turn memory, strict medical safety)
 3. Packaging OCR AI Normalization
 4. Admin AI Verification Analyst (aggregated analytics only)
-5. Rate limiting & Failsafe deterministic fallback
+5. Streaming Conversational Generator
+6. Rate limiting & Failsafe deterministic fallback
 """
 
 import json
@@ -13,13 +14,16 @@ import logging
 import time
 import uuid
 from collections import defaultdict
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Generator
 
 from app.config import settings
 from app.db.repositories import verifications_repo
 from app.services.llm.client import (
-    call_openai_json,
+    call_gemini_json,
+    call_gemini_chat,
+    stream_gemini_chat,
     is_ai_available,
+    resolve_active_model,
 )
 from app.services.llm.prompts import (
     EXPLAIN_VERIFICATION_SYSTEM_PROMPT,
@@ -30,18 +34,21 @@ from app.services.llm.prompts import (
 from app.services.llm.schemas import (
     ExplainVerificationRequest,
     VerificationExplanation,
+    VerificationExplanationPayload,
     AskMedVerifyRequest,
     AskMedVerifyResponse,
+    AskMedVerifyChatPayload,
     OCRNormalizeRequest,
     OCRNormalizedCandidate,
     AdminAIAnalyzeRequest,
     AdminAIAnalyzeResponse,
+    AdminAIAnalyzePayload,
     AIHealthResponse,
     ExplanationStyle,
     LANGUAGE_NAMES,
 )
 
-logger = logging.getLogger("medverify.ai.service")
+logger = logging.getLogger("medverify.gemini.service")
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +79,7 @@ rate_limiter = RateLimiter()
 
 # In-memory conversational memory: session_id -> list of {"role": str, "content": str}
 _conversation_memory: Dict[str, List[Dict[str, str]]] = defaultdict(list)
-_MAX_HISTORY_TURNS = 4
+_MAX_HISTORY_TURNS = 6
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +100,7 @@ class LLMService:
     ) -> VerificationExplanation:
         """Provide a strictly grounded, multi-lingual explanation of a verification."""
         # 1. Rate limit
-        limit = settings.openai_rate_limit_per_minute
+        limit = getattr(settings, "gemini_rate_limit_per_minute", 15) or 15
         if not rate_limiter.check_and_record(f"user_explain:{user_id}", max_requests=limit):
             raise RuntimeError("Rate limit exceeded: Too many AI requests. Please wait a moment.")
 
@@ -102,19 +109,19 @@ class LLMService:
         if not doc:
             raise ValueError(f"Verification record '{req.verification_id}' not found.")
 
-        # 3. Extract evidence payload
+        # 3. Extract evidence payload (never includes personal user records)
         evidence = self._extract_grounded_evidence(doc)
         target_lang = LANGUAGE_NAMES.get(req.language, "English")
 
         # 4. Check AI availability
         available, reason = is_ai_available()
         if not available:
-            logger.info("OpenAI unavailable (%s). Using deterministic explanation fallback.", reason)
+            logger.info("Gemini unavailable (%s). Using deterministic explanation fallback.", reason)
             return self._deterministic_explanation_fallback(doc, evidence, req)
 
         # 5. Build prompt
         user_prompt = f"""
-VERIFIED EVIDENCE RECORD (AUTHENTICITY STATUS IS ALREADY DECIDED BY MEDVERIFY):
+VERIFIED EVIDENCE RECORD (AUTHENTICITY STATUS IS DECIDED EXCLUSIVELY BY MEDVERIFY'S FORENSIC ENGINE):
 {json.dumps(evidence, indent=2)}
 
 REQUEST PARAMETERS:
@@ -123,6 +130,7 @@ REQUEST PARAMETERS:
 
 TASK:
 Produce a structured JSON explanation adhering strictly to the provided evidence.
+You must NOT determine or alter the verification status. Explain the verified findings clearly.
 Respond ONLY with a JSON object conforming to this schema:
 {{
   "summary": "Clear, grounded explanation in {target_lang}",
@@ -134,33 +142,34 @@ Respond ONLY with a JSON object conforming to this schema:
 }}
 """
 
-        messages = [
-            {"role": "system", "content": EXPLAIN_VERIFICATION_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
-
         try:
-            parsed = call_openai_json(messages, max_tokens=1000)
+            parsed = call_gemini_json(
+                system_instruction=EXPLAIN_VERIFICATION_SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+                response_schema=VerificationExplanationPayload,
+                max_tokens=1000,
+            )
+            active_model = resolve_active_model()
             return VerificationExplanation(
                 summary=parsed.get("summary", ""),
                 what_was_checked=parsed.get("what_was_checked", []),
                 matched_evidence=parsed.get("matched_evidence", []),
                 concerns=parsed.get("concerns", []),
                 next_steps=parsed.get("next_steps", []),
-                disclaimer=parsed.get("disclaimer", "MedVerify explanations are informational."),
+                disclaimer=parsed.get("disclaimer", "MedVerify explanations are informational and based strictly on manufacturer registry data."),
                 style=req.style.value,
                 language=req.language,
-                model_used=settings.openai_model,
+                model_used=active_model,
                 verification_id=req.verification_id,
                 status=doc.get("status", "UNKNOWN"),
                 confidence_score=doc.get("confidence_score", 0),
             )
         except Exception as exc:
-            logger.warning("OpenAI explanation call failed: %s. Falling back to deterministic output.", exc)
+            logger.warning("Gemini explanation call failed: %s. Falling back to deterministic output.", exc)
             return self._deterministic_explanation_fallback(doc, evidence, req)
 
     # -----------------------------------------------------------------------
-    # 2. Ask MedVerify
+    # 2. Ask MedVerify (Open-Ended Multi-Turn Conversational Assistant)
     # -----------------------------------------------------------------------
 
     def ask_medverify(
@@ -168,9 +177,9 @@ Respond ONLY with a JSON object conforming to this schema:
         req: AskMedVerifyRequest,
         user_id: str = "anonymous",
     ) -> AskMedVerifyResponse:
-        """Answer user questions with strict grounding and medical safety boundaries."""
+        """Answer natural language user questions with multi-turn memory and strict safety."""
         # 1. Rate limit
-        limit = settings.openai_rate_limit_per_minute
+        limit = getattr(settings, "gemini_rate_limit_per_minute", 15) or 15
         if not rate_limiter.check_and_record(f"user_chat:{user_id}", max_requests=limit):
             raise RuntimeError("Rate limit exceeded: Too many AI requests. Please wait a moment.")
 
@@ -188,62 +197,120 @@ Respond ONLY with a JSON object conforming to this schema:
         # 3. Check AI availability
         available, reason = is_ai_available()
         if not available:
-            logger.info("OpenAI unavailable (%s). Using deterministic assistant fallback.", reason)
+            logger.info("Gemini unavailable (%s). Using deterministic assistant fallback.", reason)
             return self._deterministic_chat_fallback(req, verification_context, conv_id)
 
-        # 4. Assemble conversation messages
-        messages = [{"role": "system", "content": ASK_MEDVERIFY_SYSTEM_PROMPT}]
-
-        # Inject grounded context
+        # 4. Assemble system prompt with contextual evidence
+        system_instruction = ASK_MEDVERIFY_SYSTEM_PROMPT
         if verification_context:
             context_block = f"""
-CURRENT ACTIVE VERIFICATION EVIDENCE (USER IS INQUIRING ABOUT THIS SPECIMEN):
+
+CURRENT ACTIVE VERIFICATION EVIDENCE (USER IS INQUIRING ABOUT THIS SPECIFIC PRODUCT):
 {json.dumps(verification_context, indent=2)}
 """
-            messages.append({"role": "system", "content": context_block})
+            system_instruction += context_block
 
-        # Inject conversation history
+        # 5. Fetch multi-turn conversation history
         history_key = f"{user_id}:{conv_id}"
         past_turns = _conversation_memory[history_key]
-        for turn in past_turns[-_MAX_HISTORY_TURNS:]:
-            messages.append(turn)
 
-        # Append current user prompt
-        user_block = f"""
+        user_prompt = f"""
 USER QUESTION (IN {target_lang}):
 {req.question}
 
 INSTRUCTIONS:
-1. Provide a direct, reassuring, and strictly truthful answer in {target_lang}.
-2. Adhere completely to the medical safety boundary: do NOT give dosage or treatment advice.
-3. List 1-3 verified facts referenced in your reasoning under 'grounded_facts'.
-4. Return strictly valid JSON with keys: 'answer', 'grounded_facts', 'safety_notice'.
+1. Provide a comprehensive, helpful, natural language answer in {target_lang}.
+2. Adhere completely to the medical safety boundary: do NOT give dosage, prescription, or personalized clinical treatment advice.
+3. List 1-3 verified facts or standards referenced in your reasoning under 'grounded_facts'.
+4. Return strictly valid JSON with keys:
+{{
+  "answer": "Grounded natural language answer in {target_lang}",
+  "grounded_facts": ["Fact 1", "Fact 2"],
+  "safety_notice": "MedVerify does not provide personalized medical advice or treatment recommendations."
+}}
 """
-        messages.append({"role": "user", "content": user_block})
 
         try:
-            parsed = call_openai_json(messages, max_tokens=800)
-            answer = parsed.get("answer", "")
-            facts = parsed.get("grounded_facts", [])
-            notice = parsed.get("safety_notice", "MedVerify does not provide personalized medical advice.")
+            parsed = call_gemini_json(
+                system_instruction=system_instruction,
+                user_prompt=user_prompt,
+                response_schema=AskMedVerifyChatPayload,
+                max_tokens=1000,
+            )
 
-            # Record in memory
+            answer = parsed.get("answer") or ""
+            facts = parsed.get("grounded_facts") or []
+            notice = parsed.get("safety_notice") or "MedVerify does not provide personalized medical advice or treatment recommendations."
+
+            if not answer:
+                # If model returned plain text instead of nested JSON:
+                answer = str(parsed)
+
+            # Record turn in conversation memory
             _conversation_memory[history_key].append({"role": "user", "content": req.question})
             _conversation_memory[history_key].append({"role": "assistant", "content": answer})
             if len(_conversation_memory[history_key]) > _MAX_HISTORY_TURNS * 2:
                 _conversation_memory[history_key] = _conversation_memory[history_key][-_MAX_HISTORY_TURNS * 2:]
 
+            active_model = resolve_active_model()
             return AskMedVerifyResponse(
                 answer=answer,
                 grounded_facts=facts,
                 verification_referenced=req.verification_id,
                 safety_notice=notice,
                 conversation_id=conv_id,
-                model_used=settings.openai_model,
+                model_used=active_model,
             )
+
         except Exception as exc:
-            logger.warning("OpenAI chat call failed: %s. Using deterministic fallback.", exc)
+            logger.warning("Gemini chat call failed: %s. Using deterministic fallback.", exc)
             return self._deterministic_chat_fallback(req, verification_context, conv_id)
+
+    def stream_ask_medverify(
+        self,
+        req: AskMedVerifyRequest,
+        user_id: str = "anonymous",
+    ) -> Generator[str, None, None]:
+        """Stream conversational tokens chunk by chunk using Google Gemini streaming."""
+        limit = getattr(settings, "gemini_rate_limit_per_minute", 15) or 15
+        if not rate_limiter.check_and_record(f"user_stream:{user_id}", max_requests=limit):
+            yield "Rate limit exceeded. Please wait a moment before sending more queries."
+            return
+
+        conv_id = req.conversation_id or str(uuid.uuid4())
+        verification_context = None
+        if req.verification_id:
+            doc = verifications_repo.get_by_id(req.verification_id)
+            if doc:
+                verification_context = self._extract_grounded_evidence(doc)
+
+        system_instruction = ASK_MEDVERIFY_SYSTEM_PROMPT
+        if verification_context:
+            system_instruction += f"\n\nCURRENT VERIFIED EVIDENCE:\n{json.dumps(verification_context, indent=2)}"
+
+        history_key = f"{user_id}:{conv_id}"
+        past_turns = _conversation_memory[history_key]
+
+        full_response = []
+        try:
+            for chunk in stream_gemini_chat(
+                history=past_turns,
+                message=req.question,
+                system_instruction=system_instruction,
+                max_tokens=900,
+            ):
+                full_response.append(chunk)
+                yield chunk
+
+            combined = "".join(full_response)
+            _conversation_memory[history_key].append({"role": "user", "content": req.question})
+            _conversation_memory[history_key].append({"role": "assistant", "content": combined})
+            if len(_conversation_memory[history_key]) > _MAX_HISTORY_TURNS * 2:
+                _conversation_memory[history_key] = _conversation_memory[history_key][-_MAX_HISTORY_TURNS * 2:]
+
+        except Exception as exc:
+            logger.error("Gemini stream error: %s", exc)
+            yield f"\n[MedVerify AI notice: {exc}]"
 
     # -----------------------------------------------------------------------
     # 3. OCR AI Normalization
@@ -255,20 +322,16 @@ INSTRUCTIONS:
         user_id: str = "anonymous",
     ) -> OCRNormalizedCandidate:
         """Extract and normalize candidate packaging fields from raw OCR text."""
-        limit = settings.openai_rate_limit_per_minute
+        limit = getattr(settings, "gemini_rate_limit_per_minute", 15) or 15
         if not rate_limiter.check_and_record(f"user_ocr:{user_id}", max_requests=limit):
             raise RuntimeError("Rate limit exceeded: Please wait before submitting another OCR scan.")
 
         available, reason = is_ai_available()
         if not available:
-            logger.info("OpenAI unavailable (%s). Using deterministic OCR regex parsing.", reason)
+            logger.info("Gemini unavailable (%s). Using deterministic OCR regex parsing.", reason)
             return self._deterministic_ocr_fallback(req.raw_text)
 
-        messages = [
-            {"role": "system", "content": OCR_NORMALIZATION_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": f"""
+        user_prompt = f"""
 RAW OCR TEXT EXTRACTED FROM PACKAGING (UNTRUSTED INPUT):
 \"\"\"
 {req.raw_text[:3000]}
@@ -286,12 +349,15 @@ Return a valid JSON object matching:
   "dosage_form": "string or null",
   "confidence_notes": ["Note about normalization or missing text"]
 }}
-""",
-            },
-        ]
+"""
 
         try:
-            parsed = call_openai_json(messages, max_tokens=600)
+            parsed = call_gemini_json(
+                system_instruction=OCR_NORMALIZATION_SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+                response_schema=OCRNormalizedCandidate,
+                max_tokens=800,
+            )
             return OCRNormalizedCandidate(
                 medicine_name=parsed.get("medicine_name"),
                 manufacturer=parsed.get("manufacturer"),
@@ -304,7 +370,7 @@ Return a valid JSON object matching:
                 confidence_notes=parsed.get("confidence_notes", []),
             )
         except Exception as exc:
-            logger.warning("OpenAI OCR normalization failed: %s. Using deterministic fallback.", exc)
+            logger.warning("Gemini OCR normalization failed: %s. Using deterministic fallback.", exc)
             return self._deterministic_ocr_fallback(req.raw_text)
 
     # -----------------------------------------------------------------------
@@ -318,7 +384,7 @@ Return a valid JSON object matching:
     ) -> AdminAIAnalyzeResponse:
         """Forensic analysis over strictly authorized, aggregated admin metrics."""
         admin_id = admin_user.get("id") or admin_user.get("user_id") or "admin"
-        limit = settings.openai_admin_rate_limit_per_minute
+        limit = getattr(settings, "gemini_admin_rate_limit_per_minute", 40) or 40
         if not rate_limiter.check_and_record(f"admin_analyze:{admin_id}", max_requests=limit):
             raise RuntimeError("Admin AI rate limit reached. Please wait a moment.")
 
@@ -328,7 +394,7 @@ Return a valid JSON object matching:
         # 2. Check AI availability
         available, reason = is_ai_available()
         if not available:
-            logger.info("OpenAI unavailable (%s). Using deterministic admin summary.", reason)
+            logger.info("Gemini unavailable (%s). Using deterministic admin summary.", reason)
             return self._deterministic_admin_fallback(req, analytics)
 
         user_prompt = f"""
@@ -336,7 +402,7 @@ AUTHORIZED AGGREGATED METRICS (LAST {req.time_range.upper()}):
 {json.dumps(analytics, indent=2)}
 
 ADMIN INQUIRY:
-"{req.query}"
+\"{req.query}\"
 
 TASK:
 Analyze the provided metrics and return a JSON object strictly conforming to:
@@ -352,23 +418,24 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
 }}
 """
 
-        messages = [
-            {"role": "system", "content": ADMIN_ANALYST_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
-
         try:
-            parsed = call_openai_json(messages, max_tokens=1200)
+            parsed = call_gemini_json(
+                system_instruction=ADMIN_ANALYST_SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+                response_schema=AdminAIAnalyzePayload,
+                max_tokens=1500,
+            )
+            active_model = resolve_active_model()
             return AdminAIAnalyzeResponse(
                 summary=parsed.get("summary", "Analysis completed over authorized metrics."),
                 key_findings=parsed.get("key_findings", []),
                 risk_assessment=parsed.get("risk_assessment", "No critical anomalies flagged."),
                 actionable_recommendations=parsed.get("actionable_recommendations", []),
                 metrics_analyzed=parsed.get("metrics_analyzed", analytics),
-                model_used=settings.openai_model,
+                model_used=active_model,
             )
         except Exception as exc:
-            logger.warning("OpenAI admin analysis call failed: %s. Using deterministic fallback.", exc)
+            logger.warning("Gemini admin analysis call failed: %s. Using deterministic fallback.", exc)
             return self._deterministic_admin_fallback(req, analytics)
 
     # -----------------------------------------------------------------------
@@ -376,21 +443,24 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
     # -----------------------------------------------------------------------
 
     def get_health(self) -> AIHealthResponse:
-        """Return non-sensitive status of the OpenAI LLM layer."""
+        """Return non-sensitive status of the Gemini LLM layer."""
         available, reason = is_ai_available()
+        active_model = resolve_active_model() if available else (getattr(settings, "gemini_model", "gemini-3.5-flash") or "gemini-3.5-flash")
+        configured_model = getattr(settings, "gemini_model", "gemini-3.5-flash") or "gemini-3.5-flash"
         return AIHealthResponse(
             available=available,
-            provider="openai",
-            model=settings.openai_model,
+            provider="google-gemini",
+            model=configured_model,
+            active_model=active_model,
             reason=reason,
         )
 
     # -----------------------------------------------------------------------
-    # Helper: Extract Grounded Evidence
+    # Helper: Extract Grounded Evidence (Stripping all PII)
     # -----------------------------------------------------------------------
 
     def _extract_grounded_evidence(self, doc: Dict[str, Any]) -> Dict[str, Any]:
-        """Strip raw MongoDB/Supabase internals and extract clean verified evidence."""
+        """Strip raw MongoDB/Supabase internals and PII; extract clean verified evidence."""
         med = doc.get("medicine") or {}
         parsed = doc.get("parsed_data") or {}
         checks = doc.get("checks") or []
@@ -428,7 +498,7 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
         }
 
     # -----------------------------------------------------------------------
-    # Deterministic Failsafes (Always working even if OpenAI is down)
+    # Deterministic Failsafes (Always working even if offline or missing API key)
     # -----------------------------------------------------------------------
 
     def _deterministic_explanation_fallback(
@@ -437,7 +507,7 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
         evidence: Dict[str, Any],
         req: ExplainVerificationRequest,
     ) -> VerificationExplanation:
-        """Deterministic, grounded explanation fallback when OpenAI is offline."""
+        """Deterministic, grounded explanation fallback when AI is unavailable."""
         status = doc.get("status", "UNKNOWN")
         confidence = doc.get("confidence_score", 0)
         med = doc.get("medicine") or {}
@@ -450,61 +520,53 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
 
         if status == "VERIFIED":
             summary = (
-                f"MedVerify authenticated {prod_name} against the authorized manufacturer registry for {mfr}. "
-                f"All core security parameters, including product identifier, registered batch, and serial attributes, "
-                f"matched official records with {confidence}% confidence."
+                f"{prod_name} by {mfr} successfully matched authorized manufacturer registry records "
+                f"with an integrity score of {confidence}%. All GS1 packaging parameters were authenticated."
             )
             next_steps = [
-                "Verify that packaging tamper seals are intact before use.",
-                "Store medicine according to temperature guidelines on the carton.",
+                "Inspect the carton for intact physical tamper-evident seals.",
+                "Store according to package temperature requirements.",
+                "Administer as prescribed by your licensed physician.",
+            ]
+        elif status in ("SUSPICIOUS", "FLAGGED"):
+            summary = (
+                f"Critical forensic discrepancies were detected for {prod_name}. "
+                f"The verification engine flagged the item with an integrity score of {confidence}%."
+            )
+            next_steps = [
+                "Do NOT consume or administer this medicine.",
+                "Retain the physical packaging intact for regulatory inspection.",
+                "Report this package immediately to your pharmacy or regulatory authority.",
             ]
         elif status == "EXPIRED":
             summary = (
-                f"This specimen of {prod_name} has exceeded its official regulatory expiration date. "
-                "Expired pharmaceuticals may experience chemical degradation or loss of therapeutic potency."
+                f"{prod_name} is past its regulatory expiration date. "
+                "Expired pharmaceutical products may degrade in potency or form harmful chemical breakdown products."
             )
             next_steps = [
-                "Do not ingest or administer expired medicine.",
-                "Return the product to your dispensing pharmacy or local medicine disposal center.",
-            ]
-        elif status == "SUSPICIOUS":
-            summary = (
-                f"MedVerify detected critical security flags for this product ({confidence}% confidence). "
-                f"Discrepancies were identified: {'; '.join(issues) if issues else 'Unrecognized batch or duplicate serial reuse'}."
-            )
-            next_steps = [
-                "Do not administer this medicine.",
-                "Quarantine the product packaging for inspection.",
-                "File an official quality concern report using MedVerify Report.",
-            ]
-        elif status == "NOT_FOUND":
-            summary = (
-                "The scanned product identifier is not recognized in the authorized pharmaceutical registry. "
-                "The product cannot be authenticated at this time."
-            )
-            next_steps = [
-                "Ensure the barcode or QR code is clear and undamaged, then try scanning again.",
-                "Consult the dispensing pharmacy to verify authentic sourcing.",
+                "Do NOT consume expired medication.",
+                "Return to an authorized pharmacy take-back program for safe disposal.",
             ]
         else:
             summary = (
-                f"Verification completed with status: {status} ({confidence}% confidence). "
-                "Certain packaging parameters could not be fully cross-referenced against the registry."
+                f"Verification completed with status '{status}' ({confidence}%). "
+                "Some packaging parameters could not be validated against the active registry."
             )
             next_steps = [
-                "Have a licensed pharmacist inspect the carton and physical seal.",
+                "Request manual verification from a licensed pharmacist before dispensing.",
+                "Check whether the 2D DataMatrix code is legible and undamaged.",
             ]
 
         return VerificationExplanation(
             summary=summary,
-            what_was_checked=passed_checks + failed_checks or ["Product Identifier", "Batch Code", "Expiry Date"],
-            matched_evidence=passed_checks or ["Product format verified"],
-            concerns=issues or failed_checks or ["No critical concerns flagged"],
+            what_was_checked=passed_checks + failed_checks or ["GTIN Registry Match", "Batch Integrity", "Expiry Status"],
+            matched_evidence=passed_checks or ["Authorized Manufacturer Record"],
+            concerns=issues or (failed_checks if failed_checks else ["None detected"]),
             next_steps=next_steps,
-            disclaimer="MedVerify explanations are informational and based strictly on registered manufacturer data.",
+            disclaimer="MedVerify explanations are informational and based strictly on manufacturer registry data. Consult a physician or pharmacist for clinical advice.",
             style=req.style.value,
             language=req.language,
-            model_used="deterministic-rules-engine",
+            model_used="deterministic-rule-engine",
             verification_id=req.verification_id,
             status=status,
             confidence_score=confidence,
@@ -513,83 +575,79 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
     def _deterministic_chat_fallback(
         self,
         req: AskMedVerifyRequest,
-        context: Optional[Dict[str, Any]],
+        ctx: Optional[Dict[str, Any]],
         conv_id: str,
     ) -> AskMedVerifyResponse:
-        """Deterministic answer fallback for common MedVerify questions."""
+        """Deterministic safety assistant fallback when AI is unavailable."""
         q_lower = req.question.lower()
 
-        if "should i take" in q_lower or "can i take" in q_lower or "dosage" in q_lower:
+        if any(w in q_lower for w in ["dose", "dosage", "how many", "pills", "prescribe", "treatment", "take"]):
             answer = (
-                "MedVerify cannot advise whether you should take this medicine or determine dosages. "
-                "Please consult your prescribing doctor or a licensed pharmacist immediately for medical guidance."
+                "MedVerify is a packaging verification platform and cannot provide clinical advice, dosage instructions, "
+                "or treatment recommendations. Please consult a licensed physician or pharmacist immediately regarding any medication use."
             )
-            facts = ["MedVerify is an identity verification tool, not a clinical prescriber."]
-        elif "gtin" in q_lower:
+            facts = ["Clinical dosing must always be determined by a licensed medical practitioner."]
+        elif any(w in q_lower for w in ["gtin", "barcode", "datamatrix", "01"]):
             answer = (
-                "A GTIN (Global Trade Item Number) is an internationally recognized 14-digit numeric code "
-                "that uniquely identifies a pharmaceutical product, dosage form, and packaging variant worldwide."
+                "A GTIN (Global Trade Item Number) is a globally unique 14-digit number defined by GS1 standards. "
+                "In pharmaceuticals, it identifies the specific manufacturer, drug product, strength, and packaging format."
             )
-            facts = ["GS1 standards define GTIN as Application Identifier (01)."]
-        elif "batch" in q_lower:
+            facts = ["GS1 Application Identifier (01) defines the 14-digit pharmaceutical GTIN."]
+        elif any(w in q_lower for w in ["batch", "lot", "10"]):
             answer = (
-                "A batch or lot number identifies a specific production run manufactured under uniform conditions. "
-                "Regulators use it to track manufacturing dates, expiry dates, and potential product recalls."
+                "The batch or lot number (GS1 AI 10) identifies the specific manufacturing production run. "
+                "It allows regulatory authorities and manufacturers to trace product safety and manage recalls."
             )
-            facts = ["Batch numbers are encoded with GS1 Application Identifier (10)."]
-        elif context and ("why" in q_lower or "explain" in q_lower or "flag" in q_lower):
-            status = context.get("status", "UNKNOWN")
-            issues = context.get("detected_issues") or []
-            score = context.get("confidence_score", 0)
+            facts = ["GS1 Application Identifier (10) specifies the manufacturer's production batch."]
+        elif any(w in q_lower for w in ["fake", "counterfeit", "suspicious", "tamper", "authentic"]):
             answer = (
-                f"This medicine received status {status} with {score}% confidence. "
-                + (f"Specific security concerns detected: {'; '.join(issues)}." if issues else "All parameters passed official checks.")
+                "MedVerify AI cannot determine or declare whether a medicine is authentic or counterfeit. "
+                "The MedVerify 6-factor cryptographic verification engine is the sole authority for evaluating packaging integrity. "
+                "If you suspect medicine packaging has been tampered with or contains invalid serial codes, do not consume it. "
+                "Keep the physical package and consult a licensed pharmacist or notify your dispensing pharmacy and national drug safety agency."
             )
-            facts = [f"Deterministic verdict: {status}", f"Confidence: {score}%"]
+            facts = [
+                "The MedVerify verification engine is the sole authority for evaluating product integrity.",
+                "Suspicious or tampered pharmaceuticals must never be ingested.",
+            ]
         else:
             answer = (
-                "MedVerify verifies pharmaceutical packaging integrity using 6-factor cryptographic and registry cross-referencing. "
-                "If you suspect an altered label or unsealed carton, file a report with your dispensing pharmacy."
+                "MedVerify evaluates medicine security through 6-factor forensic verification, checking GTIN registry records, "
+                "batch status, serial uniqueness, and cryptographic checksums. You can ask about verification results or packaging standards."
             )
-            facts = ["Authenticity checks cross-reference manufacturer registry databases."]
+            facts = ["MedVerify enforces GS1 Healthcare packaging verification standards."]
 
         return AskMedVerifyResponse(
             answer=answer,
             grounded_facts=facts,
-            verification_referenced=context.get("raw_identifier") if context else None,
-            safety_notice="MedVerify does not provide personalized medical advice.",
+            verification_referenced=req.verification_id,
+            safety_notice="MedVerify does not provide personalized medical advice or treatment recommendations.",
             conversation_id=conv_id,
-            model_used="deterministic-rules-engine",
+            model_used="deterministic-rule-engine",
         )
 
-    def _deterministic_ocr_fallback(self, text: str) -> OCRNormalizedCandidate:
-        """Regex-based normalization fallback when OpenAI is offline."""
+    def _deterministic_ocr_fallback(self, raw_text: str) -> OCRNormalizedCandidate:
+        """Deterministic regex-based fallback for OCR normalization."""
         import re
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        gtin_match = re.search(r"\b(\d{14})\b", raw_text)
+        gtin = gtin_match.group(1) if gtin_match else None
 
-        gtin = None
-        gtin_match = re.search(r"\b(\d{14})\b", text)
-        if gtin_match:
-            gtin = gtin_match.group(1)
+        date_match = re.search(r"\b(\d{4}[-/]\d{2}[-/]\d{2})\b", raw_text)
+        exp_date = date_match.group(1).replace("/", "-") if date_match else None
 
-        batch = None
-        batch_match = re.search(r"(?:B\.?No|Batch|Lot)[\s.:#-]*([A-Z0-9-]+)", text, re.I)
-        if batch_match:
-            batch = batch_match.group(1).strip()
-
-        expiry = None
-        exp_match = re.search(r"(?:Exp|Expiry)[\s.:#-]*([0-9]{2}[/-][0-9]{4}|[0-9]{4}[/-][0-9]{2})", text, re.I)
-        if exp_match:
-            expiry = exp_match.group(1).strip()
-
-        med_name = lines[0] if lines else None
+        batch_match = re.search(r"(?:LOT|BATCH|B\.NO|BN)[:.\s]*([A-Z0-9_-]+)", raw_text, re.IGNORECASE)
+        batch = batch_match.group(1) if batch_match else None
 
         return OCRNormalizedCandidate(
-            medicine_name=med_name,
+            medicine_name=None,
+            manufacturer=None,
             gtin=gtin,
             batch_number=batch,
-            expiry_date=expiry,
-            confidence_notes=["Extracted via rule-based fallback parser."],
+            serial_number=None,
+            expiry_date=exp_date,
+            strength=None,
+            dosage_form=None,
+            confidence_notes=["Extracted via deterministic fallback regex patterns."],
         )
 
     def _deterministic_admin_fallback(
@@ -597,32 +655,23 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
         req: AdminAIAnalyzeRequest,
         analytics: Dict[str, Any],
     ) -> AdminAIAnalyzeResponse:
-        """Deterministic summary of admin metrics when OpenAI is offline."""
+        """Deterministic admin analysis fallback."""
         total = analytics.get("total_verifications", 0)
-        suspicious = analytics.get("suspicious_rate", "0%")
-        breakdown = analytics.get("status_breakdown", {})
-
-        summary = (
-            f"Over the selected interval, MedVerify processed {total} verifications. "
-            f"Verified: {breakdown.get('VERIFIED', 0)}, Suspicious: {breakdown.get('SUSPICIOUS', 0)}, "
-            f"Review: {breakdown.get('REVIEW', 0)}, Expired: {breakdown.get('EXPIRED', 0)}. "
-            f"The overall suspicious alert rate is {suspicious}."
-        )
-
+        suspicious = analytics.get("suspicious_count", 0)
         return AdminAIAnalyzeResponse(
-            summary=summary,
+            summary=f"Analysis computed over {total} recorded verifications. Operational telemetry active.",
             key_findings=[
-                f"Total volume evaluated: {total}",
-                f"Suspicious rate: {suspicious}",
-                f"Verified count: {breakdown.get('VERIFIED', 0)}",
+                f"Total verifications logged: {total}",
+                f"Suspicious / anomalous cases: {suspicious}",
+                "Forensic verification engine running in active mode.",
             ],
-            risk_assessment="Routine operational volume with standard security monitoring.",
+            risk_assessment="Operational indicators within baseline parameters. Monitor duplicate serial queries.",
             actionable_recommendations=[
-                "Review flagged suspicious verifications in the Active Investigations Queue.",
-                "Ensure registered manufacturer catalogs are up to date.",
+                "Review flagged anomalies in the Investigations Queue.",
+                "Ensure manufacturer registry batches are updated periodically.",
             ],
             metrics_analyzed=analytics,
-            model_used="deterministic-analytics-engine",
+            model_used="deterministic-rule-engine",
         )
 
 

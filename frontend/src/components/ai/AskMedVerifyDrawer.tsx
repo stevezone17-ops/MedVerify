@@ -50,7 +50,7 @@ export const AskMedVerifyDrawer: React.FC<AskMedVerifyDrawerProps> = ({
     {
       id: 'welcome',
       sender: 'assistant',
-      text: 'Hello! I am MedVerify AI. I can explain medicine verification results, GS1 barcode standards, and packaging safety rules. How can I help you today?',
+      text: 'Hello! I am MedVerify AI assistant powered by Google Gemini. I can explain medicine verification results, GS1 barcode standards, and packaging safety rules. How can I help you today?',
       groundedFacts: [
         'MedVerify verifies authentic medicine using 6-factor forensic cryptographic evaluation.',
       ],
@@ -146,7 +146,7 @@ export const AskMedVerifyDrawer: React.FC<AskMedVerifyDrawerProps> = ({
               <div>
                 <h3 className="ask-ai-drawer__title">Ask MedVerify</h3>
                 <span className="ask-ai-drawer__subtitle">
-                  {verificationId ? `Referencing Token ${verificationId.slice(0, 12)}...` : 'Grounded Assistant'}
+                  {verificationId ? `Referencing Token ${verificationId.slice(0, 12)}...` : 'Powered by Google Gemini'}
                 </span>
               </div>
             </div>

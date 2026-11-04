@@ -1,6 +1,7 @@
-"""FastAPI routes for the MedVerify Real LLM Intelligence Layer."""
+"""FastAPI routes for the MedVerify Google Gemini Intelligence Layer."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from typing import Dict, Any
 
 from app.services.auth_service import get_current_user, require_admin
@@ -17,7 +18,7 @@ from app.services.llm.schemas import (
 )
 from app.services.llm.service import llm_service
 
-router = APIRouter(prefix="/api/ai", tags=["AI Intelligence"])
+router = APIRouter(prefix="/api/ai", tags=["Google Gemini AI Intelligence"])
 admin_ai_router = APIRouter(prefix="/api/admin/ai", tags=["Admin AI"], dependencies=[Depends(require_admin)])
 
 
@@ -27,7 +28,7 @@ admin_ai_router = APIRouter(prefix="/api/admin/ai", tags=["Admin AI"], dependenc
 
 @router.get("/health", response_model=AIHealthResponse)
 def get_ai_health():
-    """Return operational availability of the MedVerify OpenAI LLM layer."""
+    """Return operational availability of the MedVerify Google Gemini LLM layer."""
     return llm_service.get_health()
 
 
@@ -43,7 +44,7 @@ def explain_verification(
     """Generate a grounded, plain-language forensic explanation of a verification result.
     
     The underlying verification status is authoritative and immutable.
-    The LLM provides patient-friendly or technical clarification.
+    Gemini provides patient-friendly or technical clarification.
     """
     user_id = str(current_user.get("_id") or current_user.get("id") or "user")
     try:
@@ -51,7 +52,6 @@ def explain_verification(
     except ValueError as val_err:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(val_err))
     except RuntimeError as r_err:
-        # e.g. Rate limit or connection issue
         err_msg = str(r_err)
         if "Rate limit" in err_msg:
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=err_msg)
@@ -88,6 +88,23 @@ def ask_medverify(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Chat assistant error: {exc}",
+        )
+
+
+@router.post("/chat/stream")
+def stream_medverify_chat(
+    req: AskMedVerifyRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Stream real-time tokens from Google Gemini conversational assistant."""
+    user_id = str(current_user.get("_id") or current_user.get("id") or "user")
+    try:
+        generator = llm_service.stream_ask_medverify(req, user_id=user_id)
+        return StreamingResponse(generator, media_type="text/plain")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Chat streaming error: {exc}",
         )
 
 
