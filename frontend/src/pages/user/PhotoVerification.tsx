@@ -2,28 +2,18 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Camera,
-  Layers,
   ArrowLeft,
   ShieldCheck,
   CheckCircle2,
   AlertTriangle,
-  AlertCircle,
-  HelpCircle,
-  Sparkles,
-  Info,
-  Loader2,
-  Edit3,
-  Check,
-  RefreshCw,
-  QrCode,
-  Package,
-  Clock,
-  ArrowRight,
-  ShieldAlert,
-  Building,
   FileText,
+  Clock,
   BookmarkPlus,
-  Share2,
+  Loader2,
+  ArrowRight,
+  Sparkles,
+  HelpCircle,
+  Package,
 } from 'lucide-react';
 import { Link, useNavigate } from '../../router';
 import {
@@ -41,7 +31,6 @@ import ConfidenceRing from '../../components/ui/ConfidenceRing';
 import type {
   ImageAnalysisResult,
   ImageVerificationCombinedResult,
-  VerificationResult,
 } from '../../types';
 
 type VerificationStep = 'CAPTURE' | 'ANALYZING' | 'CONFIRM' | 'VERIFYING' | 'RESULT';
@@ -149,7 +138,7 @@ export const PhotoVerification: React.FC = () => {
     }
   };
 
-  // Save medicine to cabinet
+  // Save medicine to user cabinet
   const handleSaveToCabinet = async () => {
     if (!finalResult) return;
     try {
@@ -169,9 +158,9 @@ export const PhotoVerification: React.FC = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-      {/* Top Breadcrumb Navigation */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="photo-verify-container">
+      {/* Top Bar: Back Action & 3-Step Progress Stepper */}
+      <div className="photo-verify-topbar">
         <button
           type="button"
           onClick={() => {
@@ -181,28 +170,72 @@ export const PhotoVerification: React.FC = () => {
               navigate('/verify');
             }
           }}
-          className="inline-flex items-center gap-2 text-xs font-semibold tracking-wide uppercase text-slate-500 hover:text-emerald-700 transition-colors cursor-pointer"
+          className="photo-verify-back-btn"
         >
           <ArrowLeft size={16} />
-          <span>{step === 'CAPTURE' ? 'Back to Verification Hub' : 'Restart Photography'}</span>
+          <span>{step === 'CAPTURE' ? 'Back to Verification Hub' : 'Back to Photos'}</span>
         </button>
 
-        {/* Workflow Progress Steps */}
-        <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-          <span className={step === 'CAPTURE' ? 'text-emerald-700 font-bold' : ''}>1. Photos</span>
-          <span>→</span>
-          <span className={step === 'CONFIRM' ? 'text-emerald-700 font-bold' : ''}>2. Review</span>
-          <span>→</span>
-          <span className={step === 'RESULT' ? 'text-emerald-700 font-bold' : ''}>3. Official Result</span>
+        {/* 3-Step Progress Indicator */}
+        <div className="photo-verify-stepper" role="progressbar" aria-label="Verification Progress">
+          <div
+            className={`photo-verify-stepper__step ${
+              step === 'CAPTURE' || step === 'ANALYZING'
+                ? 'photo-verify-stepper__step--active'
+                : 'photo-verify-stepper__step--completed'
+            }`}
+          >
+            <span className="photo-verify-stepper__step-num">1</span>
+            <span>Upload Photos</span>
+          </div>
+
+          <span className="photo-verify-stepper__divider">→</span>
+
+          <div
+            className={`photo-verify-stepper__step ${
+              step === 'CONFIRM' || step === 'VERIFYING'
+                ? 'photo-verify-stepper__step--active'
+                : step === 'RESULT'
+                ? 'photo-verify-stepper__step--completed'
+                : ''
+            }`}
+          >
+            <span className="photo-verify-stepper__step-num">2</span>
+            <span>Review Information</span>
+          </div>
+
+          <span className="photo-verify-stepper__divider">→</span>
+
+          <div
+            className={`photo-verify-stepper__step ${
+              step === 'RESULT' ? 'photo-verify-stepper__step--active' : ''
+            }`}
+          >
+            <span className="photo-verify-stepper__step-num">3</span>
+            <span>Official Result</span>
+          </div>
         </div>
       </div>
 
+      {/* Error Alert Banner */}
       {errorMessage && (
-        <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-900 flex items-start gap-3">
-          <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
-          <div className="text-xs">
-            <p className="font-semibold text-red-950">Verification Notice</p>
-            <p className="mt-0.5">{errorMessage}</p>
+        <div
+          style={{
+            padding: '14px 18px',
+            borderRadius: 10,
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            color: '#991b1b',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 12,
+            fontSize: 13,
+          }}
+        >
+          <AlertTriangle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <strong style={{ display: 'block', marginBottom: 2 }}>Verification Notice</strong>
+            <span>{errorMessage}</span>
           </div>
         </div>
       )}
@@ -211,64 +244,83 @@ export const PhotoVerification: React.FC = () => {
       {/* STEP 1: CAPTURE & UPLOAD PACKAGING PHOTOS                       */}
       {/* ============================================================== */}
       {step === 'CAPTURE' && (
-        <div className="space-y-6">
-          {/* Hero Header */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xs">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/60 text-emerald-800 text-xs font-medium mb-3">
-                  <Camera size={13} className="text-emerald-600" />
-                  <span>PACKAGING PHOTOGRAPHY & GS1 DECODING</span>
-                </div>
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-                  Verify Medicine by Photo
-                </h1>
-                <p className="text-slate-600 text-sm mt-1.5 max-w-2xl leading-relaxed">
-                  Photograph the physical packaging from multiple angles. MedVerify reads printed packaging text,
-                  decodes GS1 2D DataMatrix barcodes, and cross-checks every parameter against the official pharmaceutical registry.
-                </p>
+        <>
+          {/* Hero Header Card */}
+          <div className="photo-verify-hero">
+            <div className="photo-verify-hero__content">
+              <div className="photo-verify-hero__eyebrow">
+                <Camera size={13} />
+                <span>PACKAGING PHOTOGRAPHY & GS1 DECODING</span>
               </div>
+              <h1 className="photo-verify-hero__title">
+                Verify Medicine by Photo
+              </h1>
+              <p className="photo-verify-hero__subtitle">
+                Photograph physical medicine packaging across the three required dimensions. MedVerify reads printed label text, decodes GS1 2D DataMatrix barcodes, and cross-checks every record against the authorized pharmaceutical registry.
+              </p>
+            </div>
 
-              <div className="hidden md:flex flex-col items-end text-right">
-                <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
-                  Supported Formats
-                </span>
-                <span className="text-xs font-medium text-slate-700 mt-1">
-                  JPG · JPEG · PNG · WEBP (Up to 10MB)
-                </span>
-              </div>
+            <div className="photo-verify-hero__meta">
+              <span className="photo-verify-hero__meta-label">Supported Formats</span>
+              <span className="photo-verify-hero__meta-val">JPG · PNG · WEBP</span>
+              <span className="photo-verify-hero__meta-label" style={{ marginTop: 6 }}>Max File Size</span>
+              <span className="photo-verify-hero__meta-val">10 MB per Photo</span>
             </div>
           </div>
 
-          {/* Photo Upload Component */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-            <MedicinePhotoUpload
-              photos={photos}
-              onPhotosChange={setPhotos}
-              onProceed={handleProceedToAnalysis}
-              disabled={isProcessing}
-            />
-          </div>
-        </div>
+          {/* 3 Upload Cards Component */}
+          <MedicinePhotoUpload
+            photos={photos}
+            onPhotosChange={setPhotos}
+            onProceed={handleProceedToAnalysis}
+            disabled={isProcessing}
+          />
+        </>
       )}
 
       {/* ============================================================== */}
-      {/* PROCESSING OVERLAY (Analyzing / Verifying)                      */}
+      {/* PROCESSING STATE (Analyzing / Verifying)                        */}
       {/* ============================================================== */}
       {(step === 'ANALYZING' || step === 'VERIFYING') && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-xs flex flex-col items-center justify-center min-h-[400px]">
-          <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-700 mb-4 animate-pulse">
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: 16,
+            border: '1px solid #e2e8f0',
+            padding: '60px 24px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: 380,
+            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)',
+          }}
+        >
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: '50%',
+              background: '#f0fdf9',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#0f766e',
+              marginBottom: 16,
+            }}
+          >
             <Loader2 size={32} className="animate-spin" />
           </div>
-          <h3 className="text-lg font-bold text-slate-900">
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: '0 0 8px 0' }}>
             {step === 'ANALYZING'
-              ? 'Analyzing Packaging & Extracting GS1 Barcodes...'
+              ? 'Extracting Packaging Information & GS1 Barcodes...'
               : 'Consulting Official Pharmaceutical Registry...'}
           </h3>
-          <p className="text-xs text-slate-500 max-w-md mt-2 leading-relaxed">
+          <p style={{ fontSize: 13, color: '#64748b', maxWidth: 460, margin: 0, lineHeight: 1.6 }}>
             {step === 'ANALYZING'
-              ? 'Reading high-resolution packaging text, inspecting 2D DataMatrix codes, and checking physical carton integrity with Gemini Vision & OCR.'
-              : 'Executing authoritative 6-factor deterministic evaluation against registered batches, expiry dates, and serial records.'}
+              ? 'Reading high-resolution packaging text, inspecting 2D DataMatrix patterns, and checking physical carton integrity with Gemini Vision & OCR.'
+              : 'Executing authoritative 6-factor deterministic evaluation against active pharmaceutical registry batches, expiry dates, and serial records.'}
           </p>
         </div>
       )}
@@ -277,205 +329,237 @@ export const PhotoVerification: React.FC = () => {
       {/* STEP 2: REVIEW & CONFIRM EXTRACTED DETAILS                     */}
       {/* ============================================================== */}
       {step === 'CONFIRM' && analysisResult && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-              <div>
-                <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">
-                  Step 2 of 3 — Field Confirmation
-                </span>
-                <h2 className="text-xl font-bold text-slate-900 mt-0.5">
-                  Review Extracted Packaging Details
-                </h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  Confirm or correct the extracted values before submitting to the deterministic verification engine.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleConfirmAndVerify}
-                disabled={isProcessing}
-                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-800 transition-colors shadow-sm cursor-pointer"
-              >
-                <ShieldCheck size={18} />
-                <span>Verify with Official Registry</span>
-              </button>
-            </div>
-
-            {/* Editable Form Fields Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-              {/* Product Name */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-slate-700">Medicine / Brand Name</label>
-                  {analysisResult.medicine_name && (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-mono rounded">
-                      {analysisResult.medicine_name.extraction_method} · {Math.round(analysisResult.medicine_name.confidence * 100)}%
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  value={confirmedFields.product_name}
-                  onChange={(e) => setConfirmedFields({ ...confirmedFields, product_name: e.target.value })}
-                  placeholder="e.g. Amoxicillin 500mg Capsules"
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-emerald-600"
-                />
-              </div>
-
-              {/* Manufacturer */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-slate-700">Manufacturer</label>
-                  {analysisResult.manufacturer && (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-mono rounded">
-                      {analysisResult.manufacturer.extraction_method} · {Math.round(analysisResult.manufacturer.confidence * 100)}%
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  value={confirmedFields.manufacturer}
-                  onChange={(e) => setConfirmedFields({ ...confirmedFields, manufacturer: e.target.value })}
-                  placeholder="e.g. PharmaCore Laboratories"
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-emerald-600"
-                />
-              </div>
-
-              {/* GTIN */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-slate-700">Global Trade Item Number (GTIN)</label>
-                  {analysisResult.gtin ? (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-mono rounded">
-                      {analysisResult.gtin.extraction_method}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 font-mono rounded">
-                      null
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  value={confirmedFields.gtin}
-                  onChange={(e) => setConfirmedFields({ ...confirmedFields, gtin: e.target.value })}
-                  placeholder="e.g. 08901234567890"
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 font-mono focus:outline-emerald-600"
-                />
-              </div>
-
-              {/* Batch Number */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-slate-700">Batch / Lot Number</label>
-                  {analysisResult.batch_number ? (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-mono rounded">
-                      {analysisResult.batch_number.extraction_method}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 font-mono rounded">
-                      null
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  value={confirmedFields.batch_number}
-                  onChange={(e) => setConfirmedFields({ ...confirmedFields, batch_number: e.target.value })}
-                  placeholder="e.g. BATCH-2026-001"
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 font-mono focus:outline-emerald-600"
-                />
-              </div>
-
-              {/* Expiry Date */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-slate-700">Expiry Date (YYYY-MM-DD)</label>
-                  {analysisResult.expiry_date ? (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-mono rounded">
-                      {analysisResult.expiry_date.extraction_method}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 font-mono rounded">
-                      null
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  value={confirmedFields.expiry_date}
-                  onChange={(e) => setConfirmedFields({ ...confirmedFields, expiry_date: e.target.value })}
-                  placeholder="e.g. 2028-01-09"
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 font-mono focus:outline-emerald-600"
-                />
-              </div>
-
-              {/* Serial Number */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-slate-700">Serial Number</label>
-                  {analysisResult.serial_number ? (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-mono rounded">
-                      {analysisResult.serial_number.extraction_method}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 font-mono rounded">
-                      null
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  value={confirmedFields.serial_number}
-                  onChange={(e) => setConfirmedFields({ ...confirmedFields, serial_number: e.target.value })}
-                  placeholder="e.g. SER-PC-000001"
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 font-mono focus:outline-emerald-600"
-                />
-              </div>
-            </div>
-
-            {/* Packaging Observations Card */}
-            <div className="mt-6 p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Visual Packaging Condition Assessment
-                </span>
-                <span
-                  className={`text-[10px] px-2 py-0.5 rounded font-semibold uppercase ${
-                    analysisResult.packaging_condition.assessment_status === 'TAMPER_WARNING'
-                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                      : 'bg-emerald-100 text-emerald-800'
-                  }`}
-                >
-                  {analysisResult.packaging_condition.assessment_status}
-                </span>
-              </div>
-
-              <p className="text-xs text-slate-600">
-                {analysisResult.packaging_condition.summary}
+        <div className="photo-review-card">
+          <div className="photo-review-header">
+            <div>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#0f766e', letterSpacing: '0.05em' }}>
+                Step 2 of 3 — Field Confirmation
+              </span>
+              <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', margin: '4px 0 0 0' }}>
+                Review Extracted Packaging Details
+              </h2>
+              <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0 0' }}>
+                Confirm or edit the extracted parameters below before submitting to the authoritative deterministic verification engine.
               </p>
-
-              {analysisResult.printed_vs_barcode_mismatch && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-900 text-xs">
-                  <p className="font-semibold flex items-center gap-1.5">
-                    <AlertTriangle size={14} className="text-red-600 shrink-0" />
-                    <span>Discrepancy Detected Between Printed Label and Barcode</span>
-                  </p>
-                  <ul className="list-disc list-inside mt-1 space-y-0.5">
-                    {analysisResult.mismatch_details.map((m, idx) => (
-                      <li key={idx}>{m}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </div>
 
-            {/* Mandatory Medical / Packaging Disclaimer */}
-            <div className="mt-6 p-4 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-[11px] leading-relaxed">
-              <strong>Mandatory Inspection Disclaimer:</strong> Image analysis and packaging verification cannot guarantee medicine authenticity, quality, storage integrity, or clinical suitability. Consult a licensed pharmacist or physician before use when uncertain.
+            <button
+              type="button"
+              onClick={handleConfirmAndVerify}
+              disabled={isProcessing}
+              className="btn-continue-review"
+            >
+              <ShieldCheck size={18} />
+              <span>Verify with Official Registry</span>
+            </button>
+          </div>
+
+          {/* Form Fields Grid */}
+          <div className="photo-review-grid">
+            {/* Product Name */}
+            <div className="photo-review-field">
+              <label className="photo-review-label">
+                <span>Medicine / Brand Name</span>
+                {analysisResult.medicine_name && (
+                  <span style={{ fontSize: 10, background: '#f0fdf9', color: '#0f766e', padding: '2px 6px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>
+                    {analysisResult.medicine_name.extraction_method} · {Math.round(analysisResult.medicine_name.confidence * 100)}%
+                  </span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={confirmedFields.product_name}
+                onChange={(e) => setConfirmedFields({ ...confirmedFields, product_name: e.target.value })}
+                placeholder="e.g. Amoxicillin 500mg Capsules"
+                className="photo-review-input"
+              />
             </div>
+
+            {/* Manufacturer */}
+            <div className="photo-review-field">
+              <label className="photo-review-label">
+                <span>Manufacturer</span>
+                {analysisResult.manufacturer && (
+                  <span style={{ fontSize: 10, background: '#f0fdf9', color: '#0f766e', padding: '2px 6px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>
+                    {analysisResult.manufacturer.extraction_method} · {Math.round(analysisResult.manufacturer.confidence * 100)}%
+                  </span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={confirmedFields.manufacturer}
+                onChange={(e) => setConfirmedFields({ ...confirmedFields, manufacturer: e.target.value })}
+                placeholder="e.g. PharmaCore Laboratories"
+                className="photo-review-input"
+              />
+            </div>
+
+            {/* GTIN */}
+            <div className="photo-review-field">
+              <label className="photo-review-label">
+                <span>Global Trade Item Number (GTIN)</span>
+                {analysisResult.gtin ? (
+                  <span style={{ fontSize: 10, background: '#f0fdf9', color: '#0f766e', padding: '2px 6px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>
+                    {analysisResult.gtin.extraction_method}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 10, background: '#f1f5f9', color: '#64748b', padding: '2px 6px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>
+                    null
+                  </span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={confirmedFields.gtin}
+                onChange={(e) => setConfirmedFields({ ...confirmedFields, gtin: e.target.value })}
+                placeholder="e.g. 08901234567890"
+                className="photo-review-input font-mono"
+              />
+            </div>
+
+            {/* Batch Number */}
+            <div className="photo-review-field">
+              <label className="photo-review-label">
+                <span>Batch / Lot Number</span>
+                {analysisResult.batch_number ? (
+                  <span style={{ fontSize: 10, background: '#f0fdf9', color: '#0f766e', padding: '2px 6px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>
+                    {analysisResult.batch_number.extraction_method}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 10, background: '#f1f5f9', color: '#64748b', padding: '2px 6px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>
+                    null
+                  </span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={confirmedFields.batch_number}
+                onChange={(e) => setConfirmedFields({ ...confirmedFields, batch_number: e.target.value })}
+                placeholder="e.g. BATCH-2026-001"
+                className="photo-review-input font-mono"
+              />
+            </div>
+
+            {/* Expiry Date */}
+            <div className="photo-review-field">
+              <label className="photo-review-label">
+                <span>Expiry Date (YYYY-MM-DD)</span>
+                {analysisResult.expiry_date ? (
+                  <span style={{ fontSize: 10, background: '#f0fdf9', color: '#0f766e', padding: '2px 6px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>
+                    {analysisResult.expiry_date.extraction_method}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 10, background: '#f1f5f9', color: '#64748b', padding: '2px 6px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>
+                    null
+                  </span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={confirmedFields.expiry_date}
+                onChange={(e) => setConfirmedFields({ ...confirmedFields, expiry_date: e.target.value })}
+                placeholder="e.g. 2028-01-09"
+                className="photo-review-input font-mono"
+              />
+            </div>
+
+            {/* Serial Number */}
+            <div className="photo-review-field">
+              <label className="photo-review-label">
+                <span>Serial Number</span>
+                {analysisResult.serial_number ? (
+                  <span style={{ fontSize: 10, background: '#f0fdf9', color: '#0f766e', padding: '2px 6px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>
+                    {analysisResult.serial_number.extraction_method}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 10, background: '#f1f5f9', color: '#64748b', padding: '2px 6px', borderRadius: 4, fontFamily: 'var(--font-mono)' }}>
+                    null
+                  </span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={confirmedFields.serial_number}
+                onChange={(e) => setConfirmedFields({ ...confirmedFields, serial_number: e.target.value })}
+                placeholder="e.g. SER-PC-000001"
+                className="photo-review-input font-mono"
+              />
+            </div>
+          </div>
+
+          {/* Visual Packaging Condition Observations */}
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 12,
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: '#334155', letterSpacing: '0.04em' }}>
+                Visual Packaging Condition Assessment
+              </span>
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  padding: '3px 8px',
+                  borderRadius: 4,
+                  background:
+                    analysisResult.packaging_condition.assessment_status === 'TAMPER_WARNING'
+                      ? '#fef3c7'
+                      : '#ecfdf5',
+                  color:
+                    analysisResult.packaging_condition.assessment_status === 'TAMPER_WARNING'
+                      ? '#92400e'
+                      : '#065f46',
+                  border:
+                    analysisResult.packaging_condition.assessment_status === 'TAMPER_WARNING'
+                      ? '1px solid #fde68a'
+                      : '1px solid #a7f3d0',
+                }}
+              >
+                {analysisResult.packaging_condition.assessment_status}
+              </span>
+            </div>
+
+            <p style={{ fontSize: 12.5, color: '#475569', margin: 0, lineHeight: 1.5 }}>
+              {analysisResult.packaging_condition.summary}
+            </p>
+
+            {analysisResult.printed_vs_barcode_mismatch && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: 12,
+                  borderRadius: 8,
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  color: '#991b1b',
+                  fontSize: 12,
+                }}
+              >
+                <p style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 6px 0' }}>
+                  <AlertTriangle size={15} color="#dc2626" />
+                  <span>Discrepancy Detected Between Printed Label and Barcode</span>
+                </p>
+                <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
+                  {analysisResult.mismatch_details.map((m, idx) => (
+                    <li key={idx}>{m}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {/* Mandatory Medical Disclaimer */}
+          <div className="photo-disclaimer-box">
+            <strong>Mandatory Healthcare Disclaimer:</strong> Image analysis and packaging verification cannot guarantee medicine authenticity, quality, storage integrity, or clinical suitability. Consult a licensed pharmacist or physician before use when uncertain.
           </div>
         </div>
       )}
@@ -484,112 +568,213 @@ export const PhotoVerification: React.FC = () => {
       {/* STEP 3: AUTHORITATIVE OFFICIAL VERIFICATION RESULT              */}
       {/* ============================================================== */}
       {step === 'RESULT' && finalResult && (
-        <div className="space-y-6">
-          {/* Verdict Banner */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xs">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-              <div className="flex items-center gap-4">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Official Certificate Banner */}
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: 16,
+              border: '1px solid #e2e8f0',
+              padding: '24px 28px',
+              boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
                 <ConfidenceRing score={finalResult.confidence_score} status={finalResult.status} size={84} />
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <StatusBadge status={finalResult.status} />
-                    <span className="text-xs font-mono text-slate-400">
+                    <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: '#94a3b8' }}>
                       ID: {finalResult.verification_id}
                     </span>
                   </div>
-                  <h2 className="text-2xl font-bold text-slate-900">
+                  <h2 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: '0 0 4px 0' }}>
                     {finalResult.verification.medicine?.product_name || confirmedFields.product_name || 'Medicine Inspection'}
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
                     Method: IMAGE_VERIFICATION · Verified against MedVerify Pharmaceutical Registry
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={handleSaveToCabinet}
                   disabled={cabinetSaved}
-                  className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold border transition-colors ${
-                    cabinetSaved
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                  }`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '9px 16px',
+                    borderRadius: 8,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    background: cabinetSaved ? '#ecfdf5' : '#ffffff',
+                    color: cabinetSaved ? '#065f46' : '#334155',
+                    border: cabinetSaved ? '1px solid #a7f3d0' : '1px solid #cbd5e1',
+                    cursor: cabinetSaved ? 'default' : 'pointer',
+                  }}
                 >
-                  <BookmarkPlus size={14} />
+                  <BookmarkPlus size={15} />
                   <span>{cabinetSaved ? 'Saved to Cabinet' : 'Save to Cabinet'}</span>
                 </button>
 
                 <Link
                   to="/activity"
-                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 transition-colors shadow-xs"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '9px 16px',
+                    borderRadius: 8,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    background: '#0f172a',
+                    color: '#ffffff',
+                    textDecoration: 'none',
+                  }}
                 >
-                  <Clock size={14} />
+                  <Clock size={15} />
                   <span>View in My Activity</span>
                 </Link>
               </div>
             </div>
           </div>
 
-          {/* Detailed Evidence Breakdown Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Column A: Confirmed Medicine Information */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-4 pb-2 border-b border-slate-100 flex items-center gap-1.5">
-                <FileText size={15} className="text-emerald-700" />
-                <span>Medicine Information</span>
+          {/* 6-Factor Checks and Medicine Info Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+            {/* Medicine Specimen Details */}
+            <div
+              style={{
+                background: '#ffffff',
+                borderRadius: 16,
+                border: '1px solid #e2e8f0',
+                padding: 20,
+                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+              }}
+            >
+              <h3
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  color: '#334155',
+                  margin: '0 0 16px 0',
+                  paddingBottom: 8,
+                  borderBottom: '1px solid #f1f5f9',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <FileText size={15} color="#0f766e" />
+                <span>Medicine Specimen Information</span>
               </h3>
-              <dl className="space-y-3 text-xs">
+              <dl style={{ display: 'flex', flexDirection: 'column', gap: 12, margin: 0, fontSize: 12.5 }}>
                 <div>
-                  <dt className="text-slate-400 font-medium">Product Name</dt>
-                  <dd className="font-semibold text-slate-800">{finalResult.verification.medicine?.product_name || confirmedFields.product_name || 'N/A'}</dd>
+                  <dt style={{ color: '#94a3b8', fontSize: 11, fontWeight: 500 }}>Product Name</dt>
+                  <dd style={{ color: '#0f172a', fontWeight: 600, margin: '2px 0 0 0' }}>
+                    {finalResult.verification.medicine?.product_name || confirmedFields.product_name || 'N/A'}
+                  </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-400 font-medium">Manufacturer</dt>
-                  <dd className="font-semibold text-slate-800">{finalResult.verification.medicine?.manufacturer || confirmedFields.manufacturer || 'N/A'}</dd>
+                  <dt style={{ color: '#94a3b8', fontSize: 11, fontWeight: 500 }}>Manufacturer</dt>
+                  <dd style={{ color: '#0f172a', fontWeight: 600, margin: '2px 0 0 0' }}>
+                    {finalResult.verification.medicine?.manufacturer || confirmedFields.manufacturer || 'N/A'}
+                  </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-400 font-medium">Batch / Lot Number</dt>
-                  <dd className="font-mono text-slate-800">{finalResult.verification.medicine?.batch_number || confirmedFields.batch_number || 'N/A'}</dd>
+                  <dt style={{ color: '#94a3b8', fontSize: 11, fontWeight: 500 }}>Batch / Lot Number</dt>
+                  <dd style={{ color: '#0f172a', fontFamily: 'var(--font-mono)', fontWeight: 600, margin: '2px 0 0 0' }}>
+                    {finalResult.verification.medicine?.batch_number || confirmedFields.batch_number || 'N/A'}
+                  </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-400 font-medium">Expiration Date</dt>
-                  <dd className="font-mono text-slate-800">{finalResult.verification.medicine?.expiry_date || confirmedFields.expiry_date || 'N/A'}</dd>
+                  <dt style={{ color: '#94a3b8', fontSize: 11, fontWeight: 500 }}>Expiration Date</dt>
+                  <dd style={{ color: '#0f172a', fontFamily: 'var(--font-mono)', fontWeight: 600, margin: '2px 0 0 0' }}>
+                    {finalResult.verification.medicine?.expiry_date || confirmedFields.expiry_date || 'N/A'}
+                  </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-400 font-medium">Serial Number</dt>
-                  <dd className="font-mono text-slate-800">{finalResult.verification.medicine?.serial_number || confirmedFields.serial_number || 'N/A'}</dd>
+                  <dt style={{ color: '#94a3b8', fontSize: 11, fontWeight: 500 }}>Serial Number</dt>
+                  <dd style={{ color: '#0f172a', fontFamily: 'var(--font-mono)', fontWeight: 600, margin: '2px 0 0 0' }}>
+                    {finalResult.verification.medicine?.serial_number || confirmedFields.serial_number || 'N/A'}
+                  </dd>
                 </div>
               </dl>
             </div>
 
-            {/* Column B: Authoritative 6-Factor Checks */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs lg:col-span-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-4 pb-2 border-b border-slate-100 flex items-center gap-1.5">
-                <ShieldCheck size={15} className="text-emerald-700" />
-                <span>Authoritative 6-Factor Engine Checks</span>
+            {/* Authoritative 6-Factor Checks */}
+            <div
+              style={{
+                background: '#ffffff',
+                borderRadius: 16,
+                border: '1px solid #e2e8f0',
+                padding: 20,
+                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+              }}
+            >
+              <h3
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  color: '#334155',
+                  margin: '0 0 16px 0',
+                  paddingBottom: 8,
+                  borderBottom: '1px solid #f1f5f9',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <ShieldCheck size={15} color="#0f766e" />
+                <span>Deterministic 6-Factor Engine Checks</span>
               </h3>
-              <div className="space-y-2.5">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {finalResult.verification.checks.map((c, i) => (
                   <div
                     key={i}
-                    className="p-3 rounded-lg border border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs"
+                    style={{
+                      padding: 10,
+                      borderRadius: 8,
+                      background: '#f8fafc',
+                      border: '1px solid #f1f5f9',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: 12.5,
+                    }}
                   >
                     <div>
-                      <span className="font-semibold text-slate-800">{c.name}</span>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{c.detail || `Field: ${c.field}`}</p>
+                      <span style={{ fontWeight: 600, color: '#1e293b' }}>{c.name}</span>
+                      <p style={{ margin: '2px 0 0 0', fontSize: 11, color: '#64748b' }}>
+                        {c.detail || `Field: ${c.field}`}
+                      </p>
                     </div>
                     <span
-                      className={`px-2 py-0.5 text-[10px] font-bold rounded ${
-                        c.status === 'PASS'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : c.status === 'FAIL'
-                          ? 'bg-red-100 text-red-800'
-                          : c.status === 'WARN'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-slate-200 text-slate-600'
-                      }`}
+                      style={{
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        background:
+                          c.status === 'PASS'
+                            ? '#ecfdf5'
+                            : c.status === 'FAIL'
+                            ? '#fef2f2'
+                            : '#fffbeb',
+                        color:
+                          c.status === 'PASS'
+                            ? '#065f46'
+                            : c.status === 'FAIL'
+                            ? '#991b1b'
+                            : '#92400e',
+                      }}
                     >
                       {c.status}
                     </span>
@@ -599,39 +784,60 @@ export const PhotoVerification: React.FC = () => {
             </div>
           </div>
 
-          {/* Column C: Packaging Observations & Recommended Actions */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 pb-2 border-b border-slate-100">
+          {/* Observations & Actions Card */}
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: 16,
+              border: '1px solid #e2e8f0',
+              padding: 24,
+              boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+            }}
+          >
+            <h3
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                color: '#334155',
+                margin: 0,
+                paddingBottom: 8,
+                borderBottom: '1px solid #f1f5f9',
+              }}
+            >
               Forensic Observations & Actionable Recommendations
             </h3>
 
-            <div className="text-xs text-slate-700 leading-relaxed space-y-2">
-              <p>
+            <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.6, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <p style={{ margin: 0 }}>
                 <strong>Packaging Condition:</strong> {finalResult.image_analysis.packaging_condition.summary}
               </p>
               {finalResult.status === 'VERIFIED' && (
-                <p className="text-emerald-800 font-medium">
+                <p style={{ margin: 0, color: '#065f46', fontWeight: 600 }}>
                   ✓ All packaging parameters and serial identifiers match authorized manufacturer specifications in the active registry.
                 </p>
               )}
               {finalResult.status === 'EXPIRED' && (
-                <p className="text-amber-800 font-medium">
+                <p style={{ margin: 0, color: '#92400e', fontWeight: 600 }}>
                   ⚠ This medicine has passed its expiration date. Do not consume expired medications; return to your dispensing pharmacy for proper disposal.
                 </p>
               )}
               {(finalResult.status === 'SUSPICIOUS' || finalResult.status === 'REVIEW') && (
-                <p className="text-red-800 font-medium">
+                <p style={{ margin: 0, color: '#991b1b', fontWeight: 600 }}>
                   ⚠ Discrepancies or serial duplication were identified. Quarantine this packaging and consult your dispensing pharmacist or national drug authority.
                 </p>
               )}
             </div>
 
-            {/* Mandatory Disclaimer */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-500 text-[11px] leading-relaxed">
-              Image analysis and packaging verification cannot guarantee medicine authenticity, quality, storage integrity, or clinical suitability. Consult a licensed pharmacist or physician before use when uncertain.
+            <div className="photo-disclaimer-box">
+              {finalResult.image_analysis.mandatory_disclaimer || 'Image analysis and packaging verification cannot guarantee medicine authenticity, quality, storage integrity, or clinical suitability. Consult a licensed pharmacist or physician before use when uncertain.'}
             </div>
 
-            <div className="pt-2 flex flex-wrap gap-3">
+            <div style={{ paddingTop: 8 }}>
               <button
                 type="button"
                 onClick={() => {
@@ -640,9 +846,10 @@ export const PhotoVerification: React.FC = () => {
                   setFinalResult(null);
                   setCabinetSaved(false);
                 }}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                className="btn-card-choose"
+                style={{ flex: 'none', padding: '10px 20px', width: 'auto' }}
               >
-                Verify Another Medicine
+                <span>Verify Another Medicine</span>
               </button>
             </div>
           </div>

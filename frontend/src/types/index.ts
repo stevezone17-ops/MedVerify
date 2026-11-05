@@ -377,6 +377,7 @@ export interface ImageAnalysisResult {
   packaging_condition: VisualPackagingCondition;
   extracted_text_blocks: string[];
   observations: string[];
+  mandatory_disclaimer?: string;
   created_at?: string;
 }
 
@@ -387,6 +388,7 @@ export interface ImageVerificationCombinedResult {
   verification: VerificationResult;
   image_analysis: ImageAnalysisResult;
   confirmed_parameters: Record<string, string | null>;
+  mandatory_disclaimer?: string;
   created_at?: string;
 }
 
