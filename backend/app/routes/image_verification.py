@@ -16,6 +16,7 @@ from fastapi import (
 from app.schemas.image_verification import (
     UploadedImageMetadata,
     ImageUploadBatchResponse,
+    ImageAnalysisResult,
 )
 from app.services.auth_service import get_current_user
 from app.services.image_service import (
@@ -23,6 +24,7 @@ from app.services.image_service import (
     image_rate_limiter,
     MAX_BATCH_FILES,
 )
+from app.services.image_analysis_service import image_analysis_service
 
 router = APIRouter(prefix="/api/image-verification", tags=["Medicine Image Verification"])
 
@@ -160,3 +162,63 @@ def get_batch_images(
         user_id=user_id,
         is_admin=is_admin,
     )
+
+
+@router.post("/analyze/{batch_id}", response_model=ImageAnalysisResult)
+def analyze_packaging_images(
+    batch_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Run multimodal packaging vision and OCR extraction on an uploaded batch."""
+    user_id = str(current_user.get("_id") or current_user.get("id"))
+    is_admin = str(current_user.get("role", "")).lower() == "admin"
+
+    try:
+        return image_analysis_service.analyze_batch(
+            batch_id=batch_id,
+            user_id=user_id,
+            is_admin=is_admin,
+        )
+    except ValueError as v_err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(v_err),
+        )
+    except PermissionError as p_err:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(p_err),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Image analysis error: {exc}",
+        )
+
+
+@router.get("/analysis/{analysis_id}", response_model=ImageAnalysisResult)
+def get_analysis_result(
+    analysis_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Retrieve an existing image analysis record by ID with strict user isolation."""
+    user_id = str(current_user.get("_id") or current_user.get("id"))
+    is_admin = str(current_user.get("role", "")).lower() == "admin"
+
+    try:
+        return image_analysis_service.get_analysis_by_id(
+            analysis_id=analysis_id,
+            user_id=user_id,
+            is_admin=is_admin,
+        )
+    except ValueError as v_err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(v_err),
+        )
+    except PermissionError as p_err:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(p_err),
+        )
+

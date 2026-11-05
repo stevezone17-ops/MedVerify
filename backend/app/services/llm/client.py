@@ -457,3 +457,90 @@ def call_openai_text(
 def get_openai_client():
     """Deprecated legacy accessor; returns None as Gemini is the primary engine."""
     return None
+
+
+def call_gemini_vision_json(
+    system_instruction: str,
+    user_prompt: str,
+    images: List[Dict[str, Any]],
+    response_schema: Optional[Any] = None,
+    model_override: Optional[str] = None,
+    temperature: float = 0.1,
+    max_tokens: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Call Google Gemini multimodal model with packaging images and user instructions.
+    
+    Extracts visual OCR, barcodes, and packaging observations enforcing structured JSON response.
+    """
+    client = get_gemini_client()
+    if not client:
+        raise RuntimeError("Gemini service unavailable: GEMINI_API_KEY is missing or invalid.")
+
+    model = resolve_active_model(model_override)
+    max_out = max_tokens or getattr(settings, "gemini_max_output_tokens", 3000) or 3000
+
+    config_kwargs: Dict[str, Any] = {
+        "system_instruction": system_instruction,
+        "response_mime_type": "application/json",
+        "temperature": temperature,
+        "max_output_tokens": max_out,
+    }
+    if response_schema is not None:
+        config_kwargs["response_schema"] = response_schema
+
+    config = types.GenerateContentConfig(**config_kwargs)
+
+    # Build multimodal content parts
+    parts: List[types.Part] = []
+    for idx, img_info in enumerate(images):
+        img_bytes = img_info.get("data")
+        mime = img_info.get("mime_type", "image/jpeg")
+        slot = img_info.get("slot", f"angle_{idx+1}")
+        if img_bytes:
+            parts.append(types.Part.from_text(text=f"--- PACKAGING PHOTOGRAPH {idx+1} [Slot: {slot}] ---"))
+            parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime))
+
+    parts.append(types.Part.from_text(text=user_prompt))
+    contents = [types.Content(role="user", parts=parts)]
+
+    start_time = time.time()
+    try:
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=config,
+        )
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        logger.info(
+            "Gemini Vision call complete. Model: %s | Images: %d | Latency: %dms",
+            model,
+            len(images),
+            latency_ms,
+        )
+
+        raw_content = response.text or "{}"
+        cleaned = clean_json_text(raw_content)
+        parsed = json.loads(cleaned)
+        return parsed
+
+    except errors.ClientError as c_err:
+        err_msg = str(c_err)
+        if "401" in err_msg or "403" in err_msg or "API_KEY_INVALID" in err_msg:
+            raise RuntimeError("Gemini authentication failed: Invalid or expired API key.") from c_err
+        if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+            raise RuntimeError("Gemini API quota or rate limit exceeded. Please wait a moment.") from c_err
+        raise RuntimeError(f"Gemini client error: {err_msg}") from c_err
+
+    except errors.ServerError as s_err:
+        err_msg = str(s_err)
+        raise RuntimeError(f"Gemini server error: {err_msg}") from s_err
+
+    except json.JSONDecodeError as j_err:
+        logger.error("Failed to parse JSON response from Gemini Vision: %s", j_err)
+        raise RuntimeError("Malformed response from AI vision model.") from j_err
+
+    except Exception as exc:
+        logger.error("Gemini vision general error: %s", exc)
+        raise RuntimeError(f"Gemini vision service error: {exc}") from exc
+

@@ -48,6 +48,10 @@ def uploaded_images_col() -> Collection:
     return get_db()["uploaded_images"]
 
 
+def image_analyses_col() -> Collection:
+    return get_db()["image_analyses"]
+
+
 # ---------------------------------------------------------------------------
 # Index creation — idempotent, safe to call on every startup
 # ---------------------------------------------------------------------------
