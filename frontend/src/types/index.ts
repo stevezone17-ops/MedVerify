@@ -6,7 +6,7 @@
 
 export type VerificationStatus = 'VERIFIED' | 'REVIEW' | 'SUSPICIOUS' | 'NOT_FOUND' | 'EXPIRED' | 'REQUIRES_REVIEW' | 'INVALID';
 
-export type VerificationMethod = 'QR' | 'DATAMATRIX' | 'BARCODE' | 'PACKAGING_OCR' | 'MANUAL' | 'NFC';
+export type VerificationMethod = 'QR' | 'DATAMATRIX' | 'BARCODE' | 'PACKAGING_OCR' | 'MANUAL' | 'NFC' | 'IMAGE_VERIFICATION';
 
 export interface VerificationCheck {
   name: string;
@@ -325,4 +325,69 @@ export interface AIHealthResponse {
   model: string;
   reason?: string | null;
 }
+
+/* ---- Medicine Image Verification ---- */
+
+export interface ExtractedFieldDetail {
+  key: string;
+  label: string;
+  value?: string | null;
+  confidence: number;
+  source_image_id?: string | null;
+  extraction_method: 'ocr' | 'barcode_decoding' | 'visual_interpretation';
+  requires_user_confirmation: boolean;
+}
+
+export interface VisualPackagingCondition {
+  assessment_status: string;
+  defect_count: number;
+  photo_consistency: string;
+  torn_packaging: boolean;
+  damaged_carton: boolean;
+  broken_seal: boolean;
+  illegible_printing: boolean;
+  missing_required_labels: boolean;
+  tampering_signs_observed: boolean;
+  summary: string;
+  confidence: number;
+  distinction_notice?: string;
+}
+
+export interface ImageAnalysisResult {
+  analysis_id: string;
+  batch_id: string;
+  user_id: string;
+  medicine_name?: ExtractedFieldDetail | null;
+  active_ingredient?: ExtractedFieldDetail | null;
+  strength?: ExtractedFieldDetail | null;
+  dosage_form?: ExtractedFieldDetail | null;
+  manufacturer?: ExtractedFieldDetail | null;
+  batch_number?: ExtractedFieldDetail | null;
+  expiry_date?: ExtractedFieldDetail | null;
+  manufacturing_date?: ExtractedFieldDetail | null;
+  gtin?: ExtractedFieldDetail | null;
+  serial_number?: ExtractedFieldDetail | null;
+  registration_number?: ExtractedFieldDetail | null;
+  barcode_detected: boolean;
+  barcode_type?: string | null;
+  barcode_payload?: string | null;
+  barcode_fields: Record<string, any>;
+  printed_vs_barcode_mismatch: boolean;
+  mismatch_details: string[];
+  packaging_condition: VisualPackagingCondition;
+  extracted_text_blocks: string[];
+  observations: string[];
+  created_at?: string;
+}
+
+export interface ImageVerificationCombinedResult {
+  verification_id: string;
+  status: VerificationStatus;
+  confidence_score: number;
+  verification: VerificationResult;
+  image_analysis: ImageAnalysisResult;
+  confirmed_parameters: Record<string, string | null>;
+  created_at?: string;
+}
+
 

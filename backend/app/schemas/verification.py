@@ -61,6 +61,11 @@ class VerificationResult(BaseModel):
     checks: list[VerificationCheck] = []
     issues: list[str] = []
     medicine: Optional[dict] = None
+    image_analysis_id: Optional[str] = None
+    image_batch_id: Optional[str] = None
+    packaging_condition: Optional[dict] = None
+    printed_vs_barcode_mismatch: bool = False
+    mismatch_details: list[str] = []
     created_at: Optional[datetime] = None
 
     @field_validator("created_at", mode="before")

@@ -182,6 +182,7 @@ export default function VerificationResultPage() {
 
   const getMethodLabel = (method?: string, inputType?: string) => {
     const m = (method || inputType || 'QR').toUpperCase();
+    if (m === 'IMAGE_VERIFICATION') return 'Medicine Photo Verification';
     if (m === 'PACKAGING_OCR') return 'Packaging OCR';
     if (m === 'MANUAL') return 'Manual Entry';
     if (m === 'DATAMATRIX') return 'GS1 DataMatrix';

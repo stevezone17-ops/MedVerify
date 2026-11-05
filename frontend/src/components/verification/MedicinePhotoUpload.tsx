@@ -611,3 +611,4 @@ export const MedicinePhotoUpload: React.FC<MedicinePhotoUploadProps> = ({
     </div>
   );
 };
+

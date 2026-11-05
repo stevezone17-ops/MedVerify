@@ -564,3 +564,73 @@ export async function adminAIAnalyze(data: {
     body: JSON.stringify(data),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Medicine Image Verification Client APIs
+// ---------------------------------------------------------------------------
+
+export async function uploadPackagingImages(
+  files: File[],
+  slots: string[] = [],
+  batchId?: string
+): Promise<{ batch_id: string; user_id: string; uploaded_count: number; images: any[] }> {
+  const token = localStorage.getItem('medverify_token');
+  const formData = new FormData();
+  files.forEach((file) => formData.append('files', file));
+  slots.forEach((slot) => formData.append('slots', slot));
+  if (batchId) formData.append('batch_id', batchId);
+
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(buildEndpointUrl('/api/image-verification/upload'), {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || 'Image upload failed');
+  }
+  return res.json();
+}
+
+export async function analyzePackagingBatch(
+  batchId: string
+): Promise<import('../types').ImageAnalysisResult> {
+  return apiFetch<import('../types').ImageAnalysisResult>(`/api/image-verification/analyze/${batchId}`, {
+    method: 'POST',
+  });
+}
+
+export async function confirmAndVerifyImage(data: {
+  analysis_id: string;
+  batch_id: string;
+  confirmed_fields: {
+    product_name?: string;
+    gtin?: string;
+    batch_number?: string;
+    serial_number?: string;
+    expiry_date?: string;
+    manufacturer?: string;
+  };
+  raw_identifier?: string;
+}): Promise<import('../types').ImageVerificationCombinedResult> {
+  return apiFetch<import('../types').ImageVerificationCombinedResult>(
+    '/api/image-verification/confirm-and-verify',
+    {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export async function getPackagingAnalysis(
+  analysisId: string
+): Promise<import('../types').ImageAnalysisResult> {
+  return apiFetch<import('../types').ImageAnalysisResult>(
+    `/api/image-verification/analysis/${analysisId}`
+  );
+}
+

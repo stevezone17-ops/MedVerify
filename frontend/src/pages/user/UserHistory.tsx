@@ -188,6 +188,7 @@ export const UserHistory: React.FC = () => {
                     <td>
                       <span className="user-history-method-badge">
                         {(row.verification_method || 'QR').toUpperCase() === 'PACKAGING_OCR' ? 'OCR' :
+                         (row.verification_method || 'QR').toUpperCase() === 'IMAGE_VERIFICATION' ? 'Photo' :
                          (row.verification_method || 'QR').toUpperCase() === 'MANUAL' ? 'Manual' :
                          (row.verification_method || 'QR').toUpperCase() === 'DATAMATRIX' ? 'DataMatrix' :
                          (row.verification_method || 'QR').toUpperCase() === 'BARCODE' ? 'Barcode' :
