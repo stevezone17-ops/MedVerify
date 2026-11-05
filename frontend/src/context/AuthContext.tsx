@@ -29,7 +29,7 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => getStoredUser());
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => checkIsAuthenticated());
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(() => checkIsAuthenticated());
   const [isSigningOut, setIsSigningOut] = useState<boolean>(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
@@ -114,7 +114,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string): Promise<AuthResponse> => {
-      setIsLoading(true);
       setProfileError(null);
       try {
         console.log('[MedVerify Auth] Submitting authentication request for:', email);
@@ -122,10 +121,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('[MedVerify Auth] Authentication succeeded. User ID:', resp.user.id, 'Role:', resp.user.role);
         setUser(resp.user);
         setIsAuthenticated(true);
-        setIsLoading(false);
         return resp;
       } catch (err) {
-        setIsLoading(false);
         console.error('[MedVerify Auth] Authentication failed for:', email);
         throw err;
       }
@@ -135,7 +132,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (name: string, email: string, password: string): Promise<AuthResponse> => {
-      setIsLoading(true);
       setProfileError(null);
       try {
         console.log('[MedVerify Auth] Submitting registration request for:', email);
@@ -143,10 +139,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('[MedVerify Auth] Registration succeeded. User ID:', resp.user.id, 'Role:', resp.user.role);
         setUser(resp.user);
         setIsAuthenticated(true);
-        setIsLoading(false);
         return resp;
       } catch (err) {
-        setIsLoading(false);
         console.error('[MedVerify Auth] Registration failed for:', email);
         throw err;
       }

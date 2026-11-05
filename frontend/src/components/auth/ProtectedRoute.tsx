@@ -215,7 +215,8 @@ export const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children 
   const { user, isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
-  if (isLoading) {
+  // If session is actively being validated from existing stored credentials, hold rendering
+  if (isLoading && isAuthenticated) {
     return null;
   }
 

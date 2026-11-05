@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { login, register, getStoredUser } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import type { User } from '../types';
 import { motion, AnimatePresence, useReducedMotion, type Variants } from 'framer-motion';
 
 // ---------------------------------------------------------------------------
@@ -132,20 +133,20 @@ export default function Login() {
   const isSuccess = status === 'success';
 
   // Role routing & redirect parameter handling
-  const navigateByRole = () => {
-    const user = auth.user || getStoredUser();
+  const navigateByRole = (overrideUser?: User | null) => {
+    const targetUser = overrideUser || auth.user || getStoredUser();
     const searchParams = new URLSearchParams(window.location.search);
     const redirectParam = searchParams.get('redirect');
 
     console.log('[MedVerify Login] Routing authenticated user:', {
-      userId: user?.id,
-      role: user?.role,
+      userId: targetUser?.id,
+      role: targetUser?.role,
       redirectParam,
     });
 
     if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')) {
       // Security guard: prevent non-admins from being redirected to /admin
-      if (redirectParam.startsWith('/admin') && user?.role !== 'admin') {
+      if (redirectParam.startsWith('/admin') && targetUser?.role !== 'admin') {
         console.warn('[MedVerify Login] Access denied: Non-admin redirected to /verify instead of', redirectParam);
         navigate('/verify', { replace: true });
         return;
@@ -154,7 +155,7 @@ export default function Login() {
       return;
     }
 
-    if (user?.role === 'admin') {
+    if (targetUser?.role === 'admin') {
       navigate('/admin', { replace: true });
     } else {
       navigate('/verify', { replace: true });
@@ -163,6 +164,12 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+
+    if (isLoading || isSuccess) {
+      return;
+    }
+
     setErrorState(null);
     setStatus('loading');
 
@@ -186,6 +193,7 @@ export default function Login() {
     }
 
     try {
+      let authedUser: User;
       if (isRegister) {
         if (!name.trim()) {
           setErrorState({
@@ -195,14 +203,18 @@ export default function Login() {
           setStatus('error');
           return;
         }
-        await auth.register(name, email, password);
+        const resp = await auth.register(name, email, password);
+        authedUser = resp.user;
       } else {
-        await auth.login(email, password);
+        const resp = await auth.login(email, password);
+        authedUser = resp.user;
       }
 
       setStatus('success');
-      // Hold success animation briefly before routing
-      setTimeout(navigateByRole, 750);
+      // Briefly show verification confirmation before routing
+      setTimeout(() => {
+        navigateByRole(authedUser);
+      }, 350);
     } catch (err: unknown) {
       const normalized = normalizeError(err);
       setErrorState(normalized);
