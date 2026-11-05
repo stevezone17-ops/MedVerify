@@ -550,5 +550,107 @@ def test_confirm_and_verify_duplicate_serial(client, user1_token, user2_token):
     assert reuse_check["status"] == "FAIL"
 
 
+# ---------------------------------------------------------------------------
+# 9. Packaging Condition & Image Assessment (Stage 6 Tests)
+# ---------------------------------------------------------------------------
+
+def test_packaging_condition_clear_and_distinction_notice(client, user1_token):
+    """Clean packaging results in NORMAL condition and carries the distinction disclaimer."""
+    headers = {"Authorization": f"Bearer {user1_token}"}
+    img_bytes1 = create_test_image_bytes(width=600, height=400)
+    img_bytes2 = create_test_image_bytes(width=600, height=400)
+
+    # Upload multi-angle images
+    up = client.post(
+        "/api/image-verification/upload",
+        files=[
+            ("files", ("front.jpg", img_bytes1, "image/jpeg")),
+            ("files", ("back.jpg", img_bytes2, "image/jpeg")),
+        ],
+        data={"slots": ["front", "back"]},
+        headers=headers,
+    )
+    batch_id = up.json()["batch_id"]
+    anl = client.post(f"/api/image-verification/analyze/{batch_id}", headers=headers)
+    assert anl.status_code == 200
+    data = anl.json()
+
+    pkg = data["packaging_condition"]
+    assert pkg["photo_consistency"] == "CONSISTENT"
+    assert pkg["defect_count"] >= 0
+    assert "distinction_notice" in pkg
+    assert "Verification status is evaluated strictly by the deterministic" in pkg["distinction_notice"]
+
+
+def test_packaging_condition_incomplete_single_photo(client, user1_token):
+    """Uploading only a single photo flags INCOMPLETE_COVERAGE in packaging condition."""
+    headers = {"Authorization": f"Bearer {user1_token}"}
+    img_bytes = create_test_image_bytes(width=600, height=400)
+
+    up = client.post(
+        "/api/image-verification/upload",
+        files=[("files", ("single_front.jpg", img_bytes, "image/jpeg"))],
+        data={"slots": ["front"]},
+        headers=headers,
+    )
+    batch_id = up.json()["batch_id"]
+    anl = client.post(f"/api/image-verification/analyze/{batch_id}", headers=headers)
+    assert anl.status_code == 200
+    data = anl.json()
+
+    pkg = data["packaging_condition"]
+    assert pkg["photo_consistency"] == "INCOMPLETE_COVERAGE"
+    assert "Single photograph provided" in pkg["summary"] or "single" in pkg["summary"].lower()
+
+
+def test_packaging_condition_tampering_warning_logic():
+    """Verify condition assessment flags defects and sets TAMPER_WARNING without claiming counterfeiting."""
+    from app.services.image_analysis_service import image_analysis_service
+    from app.schemas.image_verification import UploadedImageMetadata
+
+    mock_metas = [
+        UploadedImageMetadata(
+            image_id="img_1",
+            user_id="u1",
+            slot="front",
+            file_name="f.jpg",
+            mime_type="image/jpeg",
+            file_size=50000,
+            width=800,
+            height=600,
+            storage_path="path/1",
+        ),
+        UploadedImageMetadata(
+            image_id="img_2",
+            user_id="u1",
+            slot="back",
+            file_name="b.jpg",
+            mime_type="image/jpeg",
+            file_size=50000,
+            width=800,
+            height=600,
+            storage_path="path/2",
+        ),
+    ]
+
+    # Raw AI output with torn flap and broken seal
+    damaged_raw = {
+        "packaging_condition": {
+            "torn_packaging": True,
+            "broken_seal": True,
+            "summary": "Torn carton flap and broken tamper seal observed on packaging.",
+            "confidence": 0.95,
+        }
+    }
+    result = image_analysis_service._build_and_persist_result("batch_test_dmg", "u1", mock_metas, damaged_raw)
+    pkg = result.packaging_condition
+    assert pkg.defect_count >= 2
+    assert pkg.broken_seal is True
+    assert pkg.torn_packaging is True
+    assert pkg.assessment_status == "TAMPER_WARNING"
+    assert "deterministic" in pkg.distinction_notice
+
+
+
 
 

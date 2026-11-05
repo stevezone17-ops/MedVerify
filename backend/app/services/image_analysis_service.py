@@ -153,21 +153,55 @@ class ImageAnalysisService:
             elif len(cleaned_gtin) == 0:
                 gtin = None
 
-        # Packaging condition
+        # Packaging condition assessment
         cond_raw = raw_data.get("packaging_condition") or {}
         if isinstance(cond_raw, dict):
-            pkg_condition = VisualPackagingCondition(
-                torn_packaging=bool(cond_raw.get("torn_packaging", False)),
-                damaged_carton=bool(cond_raw.get("damaged_carton", False)),
-                broken_seal=bool(cond_raw.get("broken_seal", False)),
-                illegible_printing=bool(cond_raw.get("illegible_printing", False)),
-                missing_required_labels=bool(cond_raw.get("missing_required_labels", False)),
-                tampering_signs_observed=bool(cond_raw.get("tampering_signs_observed", False)),
-                summary=cond_raw.get("summary", "Packaging appears intact upon visual inspection."),
-                confidence=float(cond_raw.get("confidence", 0.9)),
-            )
+            torn = bool(cond_raw.get("torn_packaging", False))
+            damaged = bool(cond_raw.get("damaged_carton", False))
+            broken = bool(cond_raw.get("broken_seal", False))
+            illegible = bool(cond_raw.get("illegible_printing", False))
+            missing_labels = bool(cond_raw.get("missing_required_labels", False))
+            tampering = bool(cond_raw.get("tampering_signs_observed", False))
+            conf = float(cond_raw.get("confidence", 0.9))
+            summary_txt = str(cond_raw.get("summary") or "Packaging condition inspected.")
         else:
-            pkg_condition = VisualPackagingCondition(summary=str(cond_raw))
+            torn = damaged = broken = illegible = missing_labels = tampering = False
+            conf = 0.8
+            summary_txt = str(cond_raw)
+
+        defects = sum([torn, damaged, broken, illegible, missing_labels, tampering])
+
+        # Multi-angle photo coverage and consistency
+        if len(images_meta) < 2:
+            photo_consistency = "INCOMPLETE_COVERAGE"
+            if "insufficient" not in summary_txt.lower() and "partial" not in summary_txt.lower():
+                summary_txt += " (Note: Single photograph provided; front and back packaging consistency could not be fully cross-checked)."
+        else:
+            photo_consistency = "CONSISTENT"
+
+        if len(images_meta) == 0:
+            assessment_status = "INSUFFICIENT_VISUAL_EVIDENCE"
+            summary_txt = "Insufficient visual evidence to evaluate packaging condition."
+        elif tampering or broken or defects >= 2:
+            assessment_status = "TAMPER_WARNING"
+        elif defects == 0:
+            assessment_status = "NORMAL"
+        else:
+            assessment_status = "ASSESSED"
+
+        pkg_condition = VisualPackagingCondition(
+            assessment_status=assessment_status,
+            defect_count=defects,
+            photo_consistency=photo_consistency,
+            torn_packaging=torn,
+            damaged_carton=damaged,
+            broken_seal=broken,
+            illegible_printing=illegible,
+            missing_required_labels=missing_labels,
+            tampering_signs_observed=tampering,
+            summary=summary_txt,
+            confidence=conf,
+        )
 
         barcode_detected = bool(raw_data.get("barcode_detected", False))
         barcode_type = raw_data.get("barcode_type")

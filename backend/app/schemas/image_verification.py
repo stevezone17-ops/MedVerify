@@ -62,8 +62,11 @@ class ExtractedFieldDetail(BaseModel):
 
 
 class VisualPackagingCondition(BaseModel):
-    """Packaging condition and tampering observation flags."""
+    """Packaging condition, physical integrity, and tampering observation flags."""
 
+    assessment_status: str = "ASSESSED"  # ASSESSED | INSUFFICIENT_VISUAL_EVIDENCE | NORMAL | TAMPER_WARNING
+    defect_count: int = 0
+    photo_consistency: str = "CONSISTENT"  # CONSISTENT | INCONSISTENT_ANGLES | INCOMPLETE_COVERAGE | UNKNOWN
     torn_packaging: bool = False
     damaged_carton: bool = False
     broken_seal: bool = False
@@ -72,6 +75,10 @@ class VisualPackagingCondition(BaseModel):
     tampering_signs_observed: bool = False
     summary: str = "Packaging condition normal."
     confidence: float = 0.0
+    distinction_notice: str = (
+        "Visual packaging observations assess external physical condition only and do NOT declare "
+        "medicine authenticity. Verification status is evaluated strictly by the deterministic 6-factor registry engine."
+    )
 
 
 class ImageAnalysisResult(BaseModel):
