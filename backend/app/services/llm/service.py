@@ -232,18 +232,40 @@ INSTRUCTIONS FOR ANSWER GENERATION:
    - Organize your response using clear Markdown headings (e.g., `### 1. 2D DataMatrix / QR Code`, `### 2. GTIN (Global Trade Item Number)`), bold labels, and bullet points so it is highly readable and structured.
    - Provide concrete, practical packaging examples and real-world guidance for each topic (e.g. where the identifier is found on the carton, what it looks like, and what to check).
    - Give actionable next steps for discrepancies (e.g. quarantine packaging, do not ingest/administer, retain physical packaging intact, notify dispensing pharmacy, report to drug safety authorities).
-2. ACCURATE PHARMACEUTICAL & GS1 STANDARDS:
-   - Clarify that GTIN can be represented in 8, 12, 13, or 14-digit formats (GTIN-8, GTIN-12, GTIN-13, GTIN-14).
-   - Clarify that GS1 Application Identifier (01) specifically represents a 14-digit GTIN in barcode formats (padded with leading zeros if shorter).
-   - Clarify that Application Identifier (10) represents batch/lot number, (17) represents expiration date (YYMMDD), and (21) represents serial number.
-   - Do NOT describe every GTIN as inherently 14 digits.
-3. GROUNDED EVIDENCE & TRANSPARENCY:
-   - If an active verification record is present above, cite its specific verified parameters (GTIN, batch, expiry, manufacturer).
-   - If NO verification record is loaded, state clearly in the answer that no active verification record is referenced, and this response provides general pharmaceutical and GS1 guidance.
-   - Never fabricate registry matches or claim that Gemini determined authenticity (the deterministic verification engine is the sole authority).
-4. MEDICAL SAFETY BOUNDARY:
-   - Provide educational guidance only; never advise on individual clinical diagnosis, drug dosages, or prescriptions.
-5. REQUIRED JSON FORMAT:
+
+2. SEPARATE FOUR EVIDENCE CATEGORIES:
+   Clearly distinguish in your response between:
+   - GS1 Standards: Established international barcode rules (GTIN 8, 12, 13, 14 digits; AIs 01, 10, 17, 21).
+   - General Pharmaceutical Knowledge: Widely accepted drug safety and packaging principles.
+   - MedVerify Capabilities: Features confirmed in the actual software (6-factor rule engine, internal registry lookup, local scan history).
+   - Current Scan Evidence: Data retrieved from the specific active verification record (if provided above).
+
+3. STRICT SYSTEM CAPABILITY AWARENESS:
+   - Gemini must NEVER claim MedVerify:
+     * Blocks medicine dispensing or locks point-of-sale systems.
+     * Automatically contacts manufacturers or distributors.
+     * Initiates forensic or police investigations.
+     * Automatically alerts regulatory authorities.
+     * Performs real-time global supply-chain serial-number tracking.
+     * Maintains an all-inclusive global pharmaceutical registry.
+   - If asked about these, state clearly and unequivocally that MedVerify does NOT perform them automatically.
+
+4. VERIFICATION DECISION BOUNDARIES & DUPLICATE SERIAL NUMBERS:
+   - The deterministic verification engine remains the sole authority for verification statuses.
+   - Duplicate Serial Number: When detected, the 6-factor engine flags a Serial Number Reuse check and adjusts the score. It does NOT automatically block dispensing or contact manufacturers.
+   - A duplicate serial number is an anomaly (potential cloning, diversion, or repeated scanning of the same authentic package), but is NOT conclusive proof of counterfeiting on its own.
+   - Explain hypothetical scenarios strictly as hypothetical scenarios.
+
+5. CURRENT SCAN EVIDENCE:
+   - If an active verification record is provided in context above: cite the specific verified parameters (GTIN, batch, expiry, manufacturer, status, integrity score).
+   - If NO verification record is loaded above: explicitly state that no active verification scan record is loaded in this session, and that MedVerify has not retrieved any scan evidence for this query. Do NOT invent fake scan results.
+
+6. REGULATORY & MEDICAL SAFETY:
+   - Never prescribe medications or dosages.
+   - Explain that reporting procedures vary by jurisdiction (e.g. FDA MedWatch, UK Yellow Card, CDSCO).
+   - Recommend consulting a licensed pharmacist or local health authority when appropriate.
+
+7. REQUIRED JSON FORMAT:
    Return strictly valid JSON conforming to the schema with:
    - "answer": Comprehensive, well-structured Markdown response in {target_lang}.
    - "grounded_facts": Array of 2 to 6 specific verified facts or GS1/regulatory standards supporting the response.
@@ -308,7 +330,9 @@ INSTRUCTIONS FOR ANSWER GENERATION:
 
         system_instruction = ASK_MEDVERIFY_SYSTEM_PROMPT
         if verification_context:
-            system_instruction += f"\n\nCURRENT VERIFIED EVIDENCE:\n{json.dumps(verification_context, indent=2)}"
+            system_instruction += f"\n\nCURRENT ACTIVE VERIFICATION EVIDENCE:\n{json.dumps(verification_context, indent=2)}"
+        else:
+            system_instruction += "\n\nNO ACTIVE VERIFICATION RECORD LOADED: No specific verification scan record is loaded in this session. State clearly that no current scan evidence exists."
 
         history_key = f"{user_id}:{conv_id}"
         past_turns = _conversation_memory[history_key]
@@ -604,7 +628,7 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
         """Deterministic safety assistant fallback when AI is unavailable or rate-limited."""
         q_lower = req.question.lower()
 
-        # Check for clinical advice questions first
+        # 1. Clinical advice questions
         if any(w in q_lower for w in ["dose", "dosage", "how many", "pills", "prescribe", "treatment", "take"]):
             answer = (
                 "MedVerify is a pharmaceutical packaging verification platform and cannot provide clinical advice, dosage instructions, "
@@ -620,7 +644,155 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
                 model_used="deterministic-rule-engine",
             )
 
-        # If active verification context is present, answer grounded in the record
+        # 2. Conclusive counterfeit questions
+        if any(w in q_lower for w in ["conclusive", "conclusively", "definitively"]) and any(w in q_lower for w in ["counterfeit", "fake", "serial"]):
+            answer = (
+                "### Verification Decision Boundaries\n\n"
+                "**No.** A medicine cannot be conclusively declared counterfeit from a duplicate serial number alone.\n\n"
+                "- **MedVerify Anomaly Flagging:** A duplicate serial number triggers MedVerify's 6-factor **Serial Number Reuse** check and lowers the integrity score, categorizing the scan as `SUSPICIOUS` or `REQUIRES_REVIEW`.\n"
+                "- **Potential Causes:** A duplicate serial code indicates an anomaly such as packaging cloning, barcode reproduction, product diversion, or simply repeated scanning of the same authentic package or test sample.\n"
+                "- **Conclusive Determination:** Conclusive proof of counterfeiting requires physical packaging inspection, manufacturer cross-referencing, and chemical/laboratory analysis. MedVerify's deterministic engine flags anomalies for investigation, but a duplicate serial number alone is not definitive proof of counterfeiting.\n"
+                "- **Recommended Action:** Suspect packs should be quarantined and reviewed by a licensed pharmacist."
+            )
+            facts = [
+                "A duplicate serial number is an anomaly and is not conclusive proof of counterfeiting alone.",
+                "Definitive counterfeit confirmation requires physical inspection and laboratory testing.",
+                "MedVerify flags duplicate serials under its 6-factor Serial Number Reuse check.",
+            ]
+            return AskMedVerifyResponse(
+                answer=answer,
+                grounded_facts=facts,
+                verification_referenced=req.verification_id,
+                safety_notice="MedVerify does not provide personalized medical advice or treatment recommendations.",
+                conversation_id=conv_id,
+                model_used="deterministic-rule-engine",
+            )
+
+        # 3. Duplicate serial questions
+        if ("duplicate" in q_lower and "serial" in q_lower) or ("serial" in q_lower and "reuse" in q_lower):
+            answer = (
+                "### Duplicate Serial Number Evaluation\n\n"
+                "When MedVerify detects a duplicate serial number:\n\n"
+                "1. **Deterministic 6-Factor Engine Flag:** The system flags the **Serial Number Reuse** check because the serial code has already been recorded in MedVerify's database. This reduces the confidence score and typically sets the status to `SUSPICIOUS` or `REQUIRES_REVIEW`.\n"
+                "2. **What MedVerify Does NOT Do:** MedVerify does **not** automatically block dispensing, does **not** automatically contact the manufacturer, does **not** dispatch forensic investigators, and does **not** alert regulatory authorities.\n"
+                "3. **Evidence Classification:** A duplicate serial number indicates an anomaly (potential cloning, packaging duplication, diversion, or rescan of the same genuine unit). It is **not** conclusive proof of counterfeiting by itself.\n"
+                "4. **Actionable Next Steps:** The pack should be quarantined immediately. The user or pharmacist should contact the dispensing pharmacy or report the anomaly to the relevant national drug regulatory authority."
+            )
+            facts = [
+                "MedVerify flags duplicate serial numbers under its 6-factor Serial Number Reuse check.",
+                "MedVerify does not automatically block dispensing, contact manufacturers, or alert authorities.",
+                "A duplicate serial code indicates an anomaly but is not conclusive proof of counterfeiting alone.",
+            ]
+            return AskMedVerifyResponse(
+                answer=answer,
+                grounded_facts=facts,
+                verification_referenced=req.verification_id,
+                safety_notice="MedVerify does not provide personalized medical advice or treatment recommendations.",
+                conversation_id=conv_id,
+                model_used="deterministic-rule-engine",
+            )
+
+        # 4. Automatic manufacturer contact questions
+        if ("contact" in q_lower or "reach out" in q_lower or "notify" in q_lower) and "manufacturer" in q_lower:
+            answer = (
+                "### MedVerify System Capabilities\n\n"
+                "**No.** MedVerify does **not** automatically contact the manufacturer, distributor, or pharmaceutical company.\n\n"
+                "- **Implemented Capabilities:** MedVerify evaluates medicine packaging using its deterministic 6-factor verification engine and records scan history within its internal database.\n"
+                "- **Reporting Procedures:** MedVerify does not dispatch automated emails, API triggers, or notifications to manufacturers or regulatory authorities. Reporting an anomaly or counterfeit incident must be initiated manually by the user, pharmacist, or compliance officer.\n"
+                "- **Jurisdictional Differences:** Formal reporting procedures vary by jurisdiction (e.g., FDA MedWatch in the United States, Yellow Card in the UK, or national drug regulatory bodies)."
+            )
+            facts = [
+                "MedVerify does not automatically contact manufacturers or regulatory authorities.",
+                "Adverse or suspicious packaging reports must be filed manually by authorized personnel.",
+                "Reporting procedures vary across international regulatory jurisdictions.",
+            ]
+            return AskMedVerifyResponse(
+                answer=answer,
+                grounded_facts=facts,
+                verification_referenced=req.verification_id,
+                safety_notice="MedVerify does not provide personalized medical advice or treatment recommendations.",
+                conversation_id=conv_id,
+                model_used="deterministic-rule-engine",
+            )
+
+        # 5. Global registry questions
+        if ("global" in q_lower and "registry" in q_lower) or ("centralized" in q_lower and "registry" in q_lower):
+            answer = (
+                "### MedVerify System Capabilities\n\n"
+                "**No.** MedVerify does **not** maintain a centralized global pharmaceutical registry.\n\n"
+                "- **Implemented Registry:** MedVerify maintains an internal platform registry containing medicine specifications, GTIN entries, and authorized batch details registered by participating manufacturers and administrators.\n"
+                "- **Standards vs. Registry:** While MedVerify adheres to international GS1 healthcare packaging standards (supporting GTIN-8, GTIN-12, GTIN-13, and GTIN-14 formats), official master drug registries are maintained by national regulatory authorities (such as the US FDA, EMA, or national health ministries), not by MedVerify.\n"
+                "- **Scope:** MedVerify verification checks are evaluated against records present in its platform database."
+            )
+            facts = [
+                "MedVerify maintains an internal product registry, not an exhaustive global pharmaceutical registry.",
+                "Official master drug registries are maintained by national regulatory authorities.",
+                "MedVerify aligns with international GS1 packaging standards.",
+            ]
+            return AskMedVerifyResponse(
+                answer=answer,
+                grounded_facts=facts,
+                verification_referenced=req.verification_id,
+                safety_notice="MedVerify does not provide personalized medical advice or treatment recommendations.",
+                conversation_id=conv_id,
+                model_used="deterministic-rule-engine",
+            )
+
+        # 6. Latest scan evidence questions
+        if ("latest scan" in q_lower or "my scan" in q_lower or "evidence" in q_lower and "retrieve" in q_lower):
+            if ctx:
+                scanned = ctx.get("scanned_parameters", {})
+                registered = ctx.get("registered_specimen") or {}
+                status = ctx.get("status", "UNKNOWN")
+                confidence = ctx.get("confidence_score", 0)
+
+                prod_name = registered.get("product_name") or "Registered Pharmaceutical Product"
+                mfr = registered.get("manufacturer") or "Authorized Manufacturer"
+                batch = scanned.get("batch_number") or registered.get("registered_batch") or "N/A"
+                gtin = scanned.get("gtin") or "N/A"
+                expiry = scanned.get("expiry_date") or registered.get("registered_expiry") or "N/A"
+                serial = scanned.get("serial_number") or "N/A"
+
+                answer = (
+                    f"### Current Scan Evidence ({status} — {confidence}%)\n\n"
+                    f"MedVerify retrieved the following verified parameters from active scan record `{req.verification_id}`:\n\n"
+                    f"- **Product Name:** {prod_name}\n"
+                    f"- **Manufacturer:** {mfr}\n"
+                    f"- **GTIN:** {gtin}\n"
+                    f"- **Batch / Lot Number:** {batch}\n"
+                    f"- **Expiry Date:** {expiry}\n"
+                    f"- **Serial Number:** {serial}\n"
+                    f"- **Integrity Score:** {confidence}%\n"
+                    f"- **Status Determination:** {status}\n\n"
+                    f"This evidence is grounded strictly in MedVerify's 6-factor verification evaluation."
+                )
+                facts = [
+                    f"Active record Product: {prod_name} by {mfr}.",
+                    f"Batch {batch} registered with expiry {expiry}.",
+                    f"Verification integrity score: {confidence}% (Status: {status}).",
+                ]
+            else:
+                answer = (
+                    "### Current Scan Evidence Notice\n\n"
+                    "**No active verification scan record is loaded in this session.**\n\n"
+                    "MedVerify has not retrieved any scan evidence for this query because no medicine was scanned or referenced in this conversation turn.\n\n"
+                    "- **GS1 Standards & General Knowledge:** General GS1 rules (such as GTIN Application Identifier `(01)`, Batch `(10)`, Expiry `(17)`, and Serial `(21)`) can be explained at any time.\n"
+                    "- **Retrieving Active Scan Evidence:** To view specific verified parameters, confidence scores, and check results, please scan a medicine carton using the **Forensic Scanner** or open an existing verification from your **My Activity** history."
+                )
+                facts = [
+                    "No active verification scan record is loaded in this session.",
+                    "MedVerify does not fabricate or invent scan evidence when no record is loaded.",
+                ]
+            return AskMedVerifyResponse(
+                answer=answer,
+                grounded_facts=facts,
+                verification_referenced=req.verification_id,
+                safety_notice="MedVerify does not provide personalized medical advice or treatment recommendations.",
+                conversation_id=conv_id,
+                model_used="deterministic-rule-engine",
+            )
+
+        # If active verification context is present for other questions, ground in it
         if ctx:
             scanned = ctx.get("scanned_parameters", {})
             registered = ctx.get("registered_specimen") or {}

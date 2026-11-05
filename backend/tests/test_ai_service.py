@@ -429,3 +429,133 @@ def test_gemini_grounded_evidence_with_active_record(client, user_token):
     assert any(term in ans for term in ["BATCH-2026-001", "PharmaCore", "active", "verified", "registry"])
 
 
+# ---------------------------------------------------------------------------
+# 12. Hallucination Safeguards & Evidence Grounding (5 Required Tests)
+# ---------------------------------------------------------------------------
+
+def test_q1_duplicate_serial_handling_and_no_auto_block(client, user_token):
+    """Q1: What happens when MedVerify detects a duplicate serial number?
+    Must mention Serial Number Reuse, flag as anomaly, clarify not conclusive counterfeit proof alone,
+    and must NOT claim auto-blocking of dispensing or auto-contacting manufacturer.
+    """
+    headers = {"Authorization": f"Bearer {user_token}"}
+    resp = client.post(
+        "/api/ai/chat",
+        json={"question": "What happens when MedVerify detects a duplicate serial number?"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    ans = data["answer"]
+    ans_lower = ans.lower()
+    clean_ans = ans_lower.replace("*", "")
+
+    # Core required points
+    assert any(term in clean_ans for term in ["serial number reuse", "reuse check", "reuse", "duplicate"])
+    assert any(term in clean_ans for term in ["anomaly", "flag", "score", "suspicious", "review"])
+    # Not conclusive proof alone
+    assert any(term in clean_ans for term in ["not conclusive", "not definitive", "cannot conclusively", "does not conclusively", "investigation"])
+    # Prohibited claims: must NOT claim it automatically blocks dispensing or contacts authorities/manufacturers
+    assert "automatically blocks dispensing" not in clean_ans
+    assert "blocks medicine dispensing" not in clean_ans
+    assert "automatically contacts the manufacturer" not in clean_ans
+
+
+def test_q2_no_auto_contact_manufacturer(client, user_token):
+    """Q2: Does MedVerify automatically contact the manufacturer?
+    Must state No/does not automatically contact manufacturers or regulators.
+    """
+    headers = {"Authorization": f"Bearer {user_token}"}
+    resp = client.post(
+        "/api/ai/chat",
+        json={"question": "Does MedVerify automatically contact the manufacturer?"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    ans = data["answer"]
+    ans_lower = ans.lower()
+
+    assert any(term in ans_lower for term in ["no", "does not automatically contact", "not automatically contact", "does not automatically dispatch"])
+    assert "manufacturer" in ans_lower
+
+
+def test_q3_no_global_registry_hallucination(client, user_token):
+    """Q3: Does MedVerify maintain a global pharmaceutical registry?
+    Must confirm No, maintains internal platform registry, not an exhaustive global master registry.
+    """
+    headers = {"Authorization": f"Bearer {user_token}"}
+    resp = client.post(
+        "/api/ai/chat",
+        json={"question": "Does MedVerify maintain a global pharmaceutical registry?"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    ans = data["answer"]
+    ans_lower = ans.lower()
+
+    assert any(term in ans_lower for term in ["no", "does not maintain a global", "internal", "platform database"])
+    assert any(term in ans_lower for term in ["registry", "regulators", "gs1"])
+
+
+def test_q4_duplicate_serial_not_conclusive_proof_alone(client, user_token):
+    """Q4: Can a medicine be conclusively declared counterfeit from a duplicate serial number alone?
+    Must answer No, duplicate serial alone is an anomaly/flag, not conclusive proof without lab/physical inspection.
+    """
+    headers = {"Authorization": f"Bearer {user_token}"}
+    resp = client.post(
+        "/api/ai/chat",
+        json={"question": "Can a medicine be conclusively declared counterfeit from a duplicate serial number alone?"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    ans = data["answer"]
+    ans_lower = ans.lower()
+
+    assert any(term in ans_lower for term in ["no", "cannot", "not conclusive", "not definitive", "anomaly"])
+    assert any(term in ans_lower for term in ["laboratory", "physical", "investigation", "inspection", "packaging", "quarantine"])
+
+
+def test_q5_latest_scan_evidence_handling(client, user_token):
+    """Q5: What evidence did MedVerify actually retrieve from my latest scan?
+    When no scan is loaded, states no active scan record is loaded and does not invent parameters.
+    When a scan is loaded, provides actual retrieved parameters.
+    """
+    headers = {"Authorization": f"Bearer {user_token}"}
+
+    # Case A: No active scan loaded
+    resp_empty = client.post(
+        "/api/ai/chat",
+        json={"question": "What evidence did MedVerify actually retrieve from my latest scan?"},
+        headers=headers,
+    )
+    assert resp_empty.status_code == 200
+    data_empty = resp_empty.json()
+    ans_empty = data_empty["answer"]
+    assert any(term in ans_empty.lower() for term in ["no active verification", "no scan record", "no medicine was scanned", "not retrieved any scan evidence"])
+    assert data_empty["verification_referenced"] is None
+
+    # Case B: With an active verified record
+    v_res = verify_medicine(VerifyRequest(
+        identifier="(01)89012345678901(10)BATCH-2026-001(17)280109(21)SER-PC-000001"
+    ))
+    v_id = v_res.verification_id
+
+    resp_active = client.post(
+        "/api/ai/chat",
+        json={
+            "question": "What evidence did MedVerify actually retrieve from my latest scan?",
+            "verification_id": v_id,
+        },
+        headers=headers,
+    )
+    assert resp_active.status_code == 200
+    data_active = resp_active.json()
+    ans_active = data_active["answer"]
+    assert data_active["verification_referenced"] == v_id
+    assert any(term in ans_active for term in ["BATCH-2026-001", "89012345678901", "SER-PC-000001"])
+
+
+
