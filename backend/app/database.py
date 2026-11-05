@@ -44,6 +44,10 @@ def audit_col() -> Collection:
     return get_db()["audit_logs"]
 
 
+def uploaded_images_col() -> Collection:
+    return get_db()["uploaded_images"]
+
+
 # ---------------------------------------------------------------------------
 # Index creation — idempotent, safe to call on every startup
 # ---------------------------------------------------------------------------
@@ -60,3 +64,6 @@ def ensure_indexes() -> None:
     verifications_col().create_index([("raw_identifier", ASCENDING)])
 
     users_col().create_index([("email", ASCENDING)], unique=True)
+
+    uploaded_images_col().create_index([("user_id", ASCENDING), ("created_at", -1)])
+    uploaded_images_col().create_index([("batch_id", ASCENDING)])

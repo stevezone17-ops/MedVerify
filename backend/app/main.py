@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import ensure_indexes
-from app.routes import verification, history, medicines, auth, admin, user, reports, cabinet, notifications, ai
+from app.routes import verification, history, medicines, auth, admin, user, reports, cabinet, notifications, ai, image_verification
 
 
 @asynccontextmanager
@@ -55,6 +55,7 @@ app.include_router(cabinet.router)
 app.include_router(notifications.router)
 app.include_router(ai.router)
 app.include_router(ai.admin_ai_router)
+app.include_router(image_verification.router)
 
 
 # ---------------------------------------------------------------------------

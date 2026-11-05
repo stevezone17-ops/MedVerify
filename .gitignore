@@ -27,6 +27,11 @@ dist/
 # Logs
 *.log
 
+# Uploaded evidence and storage
+storage/
+backend/storage/
+uploads/
+
 # OS
 .DS_Store
 Thumbs.db
