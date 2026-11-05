@@ -19,6 +19,7 @@ import {
   Package,
   Pill,
   Heart,
+  Layers,
 } from 'lucide-react';
 import { Link, useNavigate } from '../../router';
 import { getUserStats, getUserRecent, getStoredUser, getCabinet } from '../../api/client';
@@ -104,7 +105,7 @@ export const UserHome: React.FC = () => {
           Choose how you'd like to verify your medicine against the trusted pharmaceutical registry.
         </p>
 
-        {/* 3-Method Verification Hub */}
+        {/* Verification Hub */}
         <div className="verify-hub-grid">
           {/* Method 1: Scan Code */}
           <Link to="/app/scanner" className="verify-hub-card verify-hub-card--scan">
@@ -123,7 +124,27 @@ export const UserHome: React.FC = () => {
             </div>
           </Link>
 
-          {/* Method 2: Scan Packaging (OCR) */}
+          {/* Method 2: Verify by Photo */}
+          <Link to="/verify/photo" className="verify-hub-card verify-hub-card--photo">
+            <div className="verify-hub-icon-wrap verify-hub-icon--photo">
+              <Layers size={28} strokeWidth={1.5} />
+            </div>
+            <div className="verify-hub-card-body">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <h3 className="verify-hub-card-title">Verify by Photo</h3>
+                <span className="px-1.5 py-0.2 text-[10px] font-semibold bg-emerald-100 text-emerald-800 rounded">NEW</span>
+              </div>
+              <p className="verify-hub-card-desc">
+                Capture multi-angle packaging photos for AI OCR, barcode decoding, and registry check.
+              </p>
+            </div>
+            <div className="verify-hub-card-footer">
+              <span className="verify-hub-method-tag">Multi-Angle · AI OCR</span>
+              <ArrowRight size={16} className="verify-hub-arrow" />
+            </div>
+          </Link>
+
+          {/* Method 3: Scan Packaging (OCR) */}
           <Link to="/app/scanner?mode=packaging" className="verify-hub-card verify-hub-card--packaging">
             <div className="verify-hub-icon-wrap verify-hub-icon--packaging">
               <Camera size={28} strokeWidth={1.5} />
@@ -131,7 +152,7 @@ export const UserHome: React.FC = () => {
             <div className="verify-hub-card-body">
               <h3 className="verify-hub-card-title">Scan Packaging</h3>
               <p className="verify-hub-card-desc">
-                Photograph the medicine label and extract details with optical text recognition.
+                Photograph single medicine label and extract details with optical text recognition.
               </p>
             </div>
             <div className="verify-hub-card-footer">
@@ -140,7 +161,7 @@ export const UserHome: React.FC = () => {
             </div>
           </Link>
 
-          {/* Method 3: Manual Entry */}
+          {/* Method 4: Manual Entry */}
           <Link to="/app/scanner?mode=manual" className="verify-hub-card verify-hub-card--manual">
             <div className="verify-hub-icon-wrap verify-hub-icon--manual">
               <PenLine size={28} strokeWidth={1.5} />

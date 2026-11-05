@@ -22,6 +22,7 @@ import UserHistory from './pages/user/UserHistory';
 import HowItWorks from './pages/user/HowItWorks';
 import UserProfile from './pages/user/UserProfile';
 import Scanner from './pages/Scanner';
+import PhotoVerification from './pages/user/PhotoVerification';
 
 /* Admin Role Pages */
 import AdminCommandCenter from './pages/admin/AdminCommandCenter';
@@ -61,6 +62,7 @@ export default function App() {
             >
               <Route path="/verify" element={<UserHome />} />
               <Route path="/verify/scan" element={<Scanner />} />
+              <Route path="/verify/photo" element={<PhotoVerification />} />
               <Route path="/activity" element={<UserHistory />} />
               <Route path="/cabinet" element={<UserCabinet />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
@@ -70,6 +72,7 @@ export default function App() {
               {/* Backwards-compatible /app routes */}
               <Route path="/app" element={<UserHome />} />
               <Route path="/app/scanner" element={<Scanner />} />
+              <Route path="/app/photo" element={<PhotoVerification />} />
               <Route path="/app/cabinet" element={<UserCabinet />} />
               <Route path="/app/history" element={<UserHistory />} />
               <Route path="/app/how-it-works" element={<HowItWorks />} />
