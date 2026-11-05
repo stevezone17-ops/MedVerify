@@ -651,6 +651,96 @@ def test_packaging_condition_tampering_warning_logic():
     assert "deterministic" in pkg.distinction_notice
 
 
+def test_stage8_end_to_end_verification_flow_and_security_invariants(client, user1_token, user2_token):
+    """End-to-end integration test verifying the complete Stage 8 flow and security invariants:
+    1. Unauthenticated requests are rejected.
+    2. Multi-slot image upload.
+    3. User data isolation (IDOR protection): User 2 cannot access User 1's batch or analysis.
+    4. Image analysis and GS1/OCR extraction.
+    5. Final authoritative confirmation and verification through deterministic engine.
+    6. Activity ledger reflects IMAGE_VERIFICATION with user isolation.
+    """
+    # 1. Unauthenticated requests rejected
+    unauth_resp = client.get("/api/image-verification/batch/batch_fake_unauth")
+    assert unauth_resp.status_code == 401
+
+    # 2. Upload packaging images
+    img1 = create_test_image_bytes(800, 600)
+    img2 = create_test_image_bytes(800, 600)
+    upload_resp = client.post(
+        "/api/image-verification/upload",
+        headers={"Authorization": f"Bearer {user1_token}"},
+        files=[
+            ("files", ("box_front.jpg", img1, "image/jpeg")),
+            ("files", ("box_barcode.jpg", img2, "image/jpeg")),
+        ],
+        data={"slots": ["front", "barcode"]},
+    )
+    assert upload_resp.status_code == 201
+    upload_data = upload_resp.json()
+    batch_id = upload_data["batch_id"]
+    assert len(upload_data["images"]) == 2
+
+    # 3. IDOR protection: User 2 cannot access User 1's batch
+    idor_batch_resp = client.get(
+        f"/api/image-verification/batch/{batch_id}",
+        headers={"Authorization": f"Bearer {user2_token}"},
+    )
+    assert idor_batch_resp.status_code == 403
+
+    # 4. User 1 analyzes the batch
+    analyze_resp = client.post(
+        f"/api/image-verification/analyze/{batch_id}",
+        headers={"Authorization": f"Bearer {user1_token}"},
+    )
+    assert analyze_resp.status_code == 200
+    analysis = analyze_resp.json()
+    analysis_id = analysis["analysis_id"]
+
+    # IDOR protection on analysis
+    idor_analysis_resp = client.get(
+        f"/api/image-verification/analysis/{analysis_id}",
+        headers={"Authorization": f"Bearer {user2_token}"},
+    )
+    assert idor_analysis_resp.status_code == 403
+
+    # 5. Confirm and verify against authoritative engine with registered medicine
+    confirm_resp = client.post(
+        "/api/image-verification/confirm-and-verify",
+        headers={"Authorization": f"Bearer {user1_token}"},
+        json={
+            "analysis_id": analysis_id,
+            "batch_id": batch_id,
+            "confirmed_fields": {
+                "product_name": "Amoxicillin 500mg Capsules",
+                "manufacturer": "PharmaCore Laboratories",
+                "batch_number": "BATCH-2026-001",
+                "expiry_date": "2028-01-09",
+                "serial_number": f"SER-PC-E2E-{batch_id[:6]}",
+                "gtin": "89012345678901",
+            },
+        },
+    )
+    assert confirm_resp.status_code == 200
+    result = confirm_resp.json()
+    assert result["verification_id"].startswith("vrf_")
+    assert result["status"] == "VERIFIED"
+    assert result["verification"]["verification_method"] == "IMAGE_VERIFICATION"
+    assert "mandatory_disclaimer" in result["image_analysis"]
+    assert "Image analysis and packaging verification cannot guarantee medicine authenticity" in result["image_analysis"]["mandatory_disclaimer"]
+
+    # 6. Verify ledger / personal activity includes IMAGE_VERIFICATION
+    activity_resp = client.get(
+        "/api/user/history",
+        headers={"Authorization": f"Bearer {user1_token}"},
+    )
+    assert activity_resp.status_code == 200
+    items = activity_resp.json()["items"]
+    matching = [it for it in items if it["verification_id"] == result["verification_id"]]
+    assert len(matching) == 1
+    assert matching[0]["verification_method"] == "IMAGE_VERIFICATION"
+
+
 
 
 

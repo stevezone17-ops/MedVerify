@@ -163,11 +163,22 @@ def get_batch_images(
     user_id = str(current_user.get("_id") or current_user.get("id"))
     is_admin = str(current_user.get("role", "")).lower() == "admin"
 
-    return image_service.get_batch_images(
-        batch_id=batch_id,
-        user_id=user_id,
-        is_admin=is_admin,
-    )
+    try:
+        return image_service.get_batch_images(
+            batch_id=batch_id,
+            user_id=user_id,
+            is_admin=is_admin,
+        )
+    except PermissionError as p_err:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(p_err),
+        )
+    except ValueError as v_err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(v_err),
+        )
 
 
 @router.post("/analyze/{batch_id}", response_model=ImageAnalysisResult)

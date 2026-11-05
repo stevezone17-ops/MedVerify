@@ -49,6 +49,12 @@ class ImageUploadBatchResponse(BaseModel):
         return to_iso_utc(v)
 
 
+MANDATORY_PACKAGING_DISCLAIMER: str = (
+    "Image analysis and packaging verification cannot guarantee medicine authenticity, "
+    "quality, storage integrity, or clinical suitability. Consult a licensed pharmacist or physician before use when uncertain."
+)
+
+
 class ExtractedFieldDetail(BaseModel):
     """Structured detail for an extracted packaging field."""
 
@@ -115,6 +121,7 @@ class ImageAnalysisResult(BaseModel):
     # Raw OCR text collected from images
     extracted_text_blocks: List[str] = []
     observations: List[str] = []
+    mandatory_disclaimer: str = MANDATORY_PACKAGING_DISCLAIMER
     created_at: Optional[datetime] = None
 
     @field_validator("created_at", mode="before")
@@ -156,6 +163,7 @@ class ImageVerificationCombinedResult(BaseModel):
     verification: Dict[str, Any]  # Full VerificationResult from deterministic engine
     image_analysis: ImageAnalysisResult
     confirmed_parameters: Dict[str, Optional[str]]
+    mandatory_disclaimer: str = MANDATORY_PACKAGING_DISCLAIMER
     created_at: Optional[datetime] = None
 
     @field_validator("created_at", mode="before")

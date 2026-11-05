@@ -240,6 +240,20 @@ class ImageService:
         is_admin: bool = False,
     ) -> List[UploadedImageMetadata]:
         """List all image metadata for a given batch, enforcing user ownership."""
+        existing_doc = uploaded_images_col().find_one({"batch_id": batch_id})
+        if not existing_doc:
+            raise ValueError(f"Batch '{batch_id}' not found.")
+
+        owner_id = str(existing_doc.get("user_id"))
+        if not is_admin and owner_id != str(user_id):
+            logger.warning(
+                "IDOR attempt: User %s tried to access batch %s owned by %s",
+                user_id,
+                batch_id,
+                owner_id,
+            )
+            raise PermissionError("Access denied: You are not authorized to view this packaging batch.")
+
         query: Dict[str, Any] = {"batch_id": batch_id}
         if not is_admin:
             query["user_id"] = str(user_id)
