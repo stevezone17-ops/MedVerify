@@ -314,3 +314,68 @@ def test_image_analysis_idor_protection(client, user1_token, user2_token):
     get_attacker = client.get(f"/api/image-verification/analysis/{analysis_id}", headers=headers_u2)
     assert get_attacker.status_code == 403
 
+
+# ---------------------------------------------------------------------------
+# 7. Barcode Decoding & GS1 Data Extraction (Stage 4 Tests)
+# ---------------------------------------------------------------------------
+
+def test_gs1_datamatrix_parsing_and_mismatch_detection():
+    """Verify GS1 parser extracts AIs and detects mismatches against printed packaging."""
+    from app.services.qr_parser import parse_identifier, compare_ocr_with_barcode
+
+    # Case A: Standard parenthesized GS1 DataMatrix
+    raw_gs1 = "(01)08901234567890(17)280109(10)BATCH-2026-001(21)SER-PC-000001"
+    parsed = parse_identifier(raw_gs1)
+    assert parsed.get("product_identifier") == "08901234567890"
+    assert parsed.get("batch_number") == "BATCH-2026-001"
+    assert parsed.get("expiry_date") == "2028-01-09"
+    assert parsed.get("serial_number") == "SER-PC-000001"
+
+    # Case B: Unparenthesized raw GS1 element string
+    raw_unparenthesized = "01089012345678901728010910BATCH-2026-001^21SER-PC-000001"
+    parsed_unparen = parse_identifier(raw_unparenthesized)
+    assert parsed_unparen.get("product_identifier") == "08901234567890"
+    assert parsed_unparen.get("batch_number") == "BATCH-2026-001"
+    assert parsed_unparen.get("expiry_date") == "2028-01-09"
+    assert parsed_unparen.get("serial_number") == "SER-PC-000001"
+
+    # Case C: Perfect alignment between OCR and Barcode
+    ocr_matching = {
+        "gtin": "08901234567890",
+        "batch_number": "BATCH-2026-001",
+        "expiry_date": "2028-01-09",
+        "serial_number": "SER-PC-000001",
+    }
+    mismatch_found, mismatches = compare_ocr_with_barcode(ocr_matching, parsed)
+    assert mismatch_found is False
+    assert len(mismatches) == 0
+
+    # Case D: Mismatched Batch and Expiry
+    ocr_tampered = {
+        "gtin": "08901234567890",
+        "batch_number": "FAKE-BATCH-999",
+        "expiry_date": "2029-12-31",
+        "serial_number": "SER-PC-000001",
+    }
+    mismatch_tampered, tampered_details = compare_ocr_with_barcode(ocr_tampered, parsed)
+    assert mismatch_tampered is True
+    assert len(tampered_details) >= 2
+    assert any("Batch number mismatch" in d for d in tampered_details)
+    assert any("Expiration date mismatch" in d for d in tampered_details)
+
+
+def test_existing_live_scanner_remains_intact(client, user1_token):
+    """Verify that existing deterministic scanner endpoint POST /api/verify remains intact."""
+    headers = {"Authorization": f"Bearer {user1_token}"}
+    payload = {
+        "identifier": "(01)89012345678901(10)BATCH-2026-001(17)280109(21)SER-PC-000001",
+        "method": "QR",
+    }
+    resp = client.post("/api/verify", json=payload, headers=headers)
+    assert resp.status_code == 200
+    res_data = resp.json()
+    assert res_data["status"] == "VERIFIED"
+    assert res_data["confidence_score"] >= 80
+    assert len(res_data["checks"]) >= 4
+
+

@@ -13,6 +13,7 @@ from app.schemas.image_verification import (
     UploadedImageMetadata,
 )
 from app.services.image_service import image_service
+from app.services.qr_parser import parse_identifier, compare_ocr_with_barcode
 from app.services.llm.client import (
     is_ai_available,
     call_gemini_vision_json,
@@ -171,6 +172,62 @@ class ImageAnalysisService:
         barcode_detected = bool(raw_data.get("barcode_detected", False))
         barcode_type = raw_data.get("barcode_type")
         barcode_payload = raw_data.get("barcode_payload")
+        barcode_fields: Dict[str, Any] = {}
+        mismatch_found = False
+        mismatch_details: List[str] = []
+
+        if barcode_payload:
+            barcode_detected = True
+            barcode_fields = parse_identifier(str(barcode_payload))
+            
+            # Enrich fields if barcode extracted them and OCR didn't
+            if not gtin and barcode_fields.get("product_identifier"):
+                gtin = ExtractedFieldDetail(
+                    key="gtin",
+                    label="Global Trade Item Number (GTIN)",
+                    value=barcode_fields["product_identifier"],
+                    confidence=0.98,
+                    source_image_id=primary_img_id,
+                    extraction_method="barcode_decoding",
+                )
+            if not batch and barcode_fields.get("batch_number"):
+                batch = ExtractedFieldDetail(
+                    key="batch_number",
+                    label="Batch / Lot Number",
+                    value=barcode_fields["batch_number"],
+                    confidence=0.98,
+                    source_image_id=primary_img_id,
+                    extraction_method="barcode_decoding",
+                )
+            if not expiry and barcode_fields.get("expiry_date"):
+                expiry = ExtractedFieldDetail(
+                    key="expiry_date",
+                    label="Expiry Date",
+                    value=barcode_fields["expiry_date"],
+                    confidence=0.98,
+                    source_image_id=primary_img_id,
+                    extraction_method="barcode_decoding",
+                )
+            if not serial and barcode_fields.get("serial_number"):
+                serial = ExtractedFieldDetail(
+                    key="serial_number",
+                    label="Serial Number",
+                    value=barcode_fields["serial_number"],
+                    confidence=0.98,
+                    source_image_id=primary_img_id,
+                    extraction_method="barcode_decoding",
+                )
+
+            # Compare OCR printed details against barcode contents
+            ocr_dict = {
+                "gtin": gtin.value if gtin else None,
+                "batch_number": batch.value if batch else None,
+                "expiry_date": expiry.value if expiry else None,
+                "serial_number": serial.value if serial else None,
+            }
+            mismatch_found, mismatch_details = compare_ocr_with_barcode(ocr_dict, barcode_fields)
+            if mismatch_found:
+                observations.extend(mismatch_details)
 
         extracted_text_blocks = raw_data.get("extracted_text_blocks") or []
         if isinstance(extracted_text_blocks, str):
@@ -179,6 +236,11 @@ class ImageAnalysisService:
         observations = raw_data.get("observations") or []
         if isinstance(observations, str):
             observations = [observations]
+
+        if not barcode_detected:
+            observations.append(
+                "No GS1 2D DataMatrix or barcode payload was extracted from packaging photographs; proceeding with OCR evidence."
+            )
 
         now = datetime.now(timezone.utc)
         result = ImageAnalysisResult(
@@ -199,6 +261,9 @@ class ImageAnalysisService:
             barcode_detected=barcode_detected,
             barcode_type=barcode_type,
             barcode_payload=barcode_payload,
+            barcode_fields=barcode_fields,
+            printed_vs_barcode_mismatch=mismatch_found,
+            mismatch_details=mismatch_details,
             packaging_condition=pkg_condition,
             extracted_text_blocks=extracted_text_blocks,
             observations=observations,
