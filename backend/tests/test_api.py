@@ -15,11 +15,21 @@ def setup_db():
 
 
 def test_health_check():
-    response = client.get("/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ok"
-    assert "version" in data
+    for path in ("/health", "/api/health"):
+        response = client.get(path)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert "version" in data
+
+
+def test_verification_service_endpoint():
+    for path in ("/api/verify", "/api/verification"):
+        response = client.get(path)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["service"] == "verification-service"
 
 
 def test_verify_known_medicine():
@@ -90,3 +100,40 @@ def test_admin_analytics_with_token():
     data = response.json()
     assert "total_verifications" in data
     assert "status_breakdown" in data
+
+
+def test_auth_login_user():
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "user@medverify.demo", "password": "user123"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert data["user"]["role"] == "user"
+
+
+def test_auth_me_persistence():
+    login_res = client.post(
+        "/api/auth/login",
+        json={"email": "user@medverify.demo", "password": "user123"},
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    me_res = client.get("/api/auth/me", headers=headers)
+    assert me_res.status_code == 200
+    me_data = me_res.json()
+    assert me_data["email"] == "user@medverify.demo"
+    assert me_data["role"] == "user"
+
+
+def test_verify_alias_post():
+    response = client.post(
+        "/api/verification",
+        json={"identifier": "89012345678901"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "status" in data
+    assert "confidence_score" in data
+    assert data["medicine"]["product_identifier"] == "89012345678901"

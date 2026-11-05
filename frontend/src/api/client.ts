@@ -77,7 +77,11 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export async function checkHealth(): Promise<{ status: string; version?: string }> {
-  return apiFetch<{ status: string; version?: string }>('/health');
+  try {
+    return await apiFetch<{ status: string; version?: string }>('/api/health');
+  } catch {
+    return apiFetch<{ status: string; version?: string }>('/health');
+  }
 }
 
 // ---------------------------------------------------------------------------

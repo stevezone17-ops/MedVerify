@@ -43,8 +43,8 @@ function normalizeError(err: unknown): NormalizedError {
 
     if (isNet) {
       return {
-        title: 'VERIFICATION SERVICE UNAVAILABLE',
-        message: 'Verification service is currently unavailable. Please check that the API server is running on port 8001.',
+        title: 'AUTHENTICATION SERVICE UNAVAILABLE',
+        message: 'The MedVerify API server is currently unreachable. Please check that the backend server is running on port 8001.',
       };
     }
 
@@ -59,7 +59,8 @@ function normalizeError(err: unknown): NormalizedError {
       msgLower.includes('invalid') ||
       msgLower.includes('unauthorized') ||
       msgLower.includes('incorrect') ||
-      msgLower.includes('credentials')
+      msgLower.includes('credentials') ||
+      msgLower.includes('user not found')
     ) {
       return {
         title: 'AUTHENTICATION FAILED',
@@ -68,10 +69,10 @@ function normalizeError(err: unknown): NormalizedError {
     }
 
     // 404 on endpoint
-    if (status === 404 || msgLower.includes('404') || msgLower.includes('not found')) {
+    if (status === 404) {
       return {
         title: 'SERVICE UNAVAILABLE',
-        message: 'Verification service endpoint not found.',
+        message: 'Authentication service endpoint (/api/auth/login) not found on backend server.',
       };
     }
 
@@ -95,7 +96,7 @@ function normalizeError(err: unknown): NormalizedError {
     if (status >= 500 || msgLower.includes('500') || msgLower.includes('internal')) {
       return {
         title: 'AUTHENTICATION ERROR',
-        message: 'The verification service returned an unexpected response.',
+        message: 'The authentication service returned an unexpected response.',
       };
     }
 
