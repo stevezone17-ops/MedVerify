@@ -379,3 +379,176 @@ def test_existing_live_scanner_remains_intact(client, user1_token):
     assert len(res_data["checks"]) >= 4
 
 
+# ---------------------------------------------------------------------------
+# 8. Deterministic 6-Factor Verification Engine Integration (Stage 5 Tests)
+# ---------------------------------------------------------------------------
+
+def test_confirm_and_verify_registered_product(client, user1_token):
+    """Submitting confirmed details for a registered medicine produces VERIFIED status."""
+    headers = {"Authorization": f"Bearer {user1_token}"}
+    img_bytes = create_test_image_bytes(width=500, height=500)
+
+    # 1. Upload & analyze
+    up = client.post(
+        "/api/image-verification/upload",
+        files=[("files", ("box.jpg", img_bytes, "image/jpeg"))],
+        headers=headers,
+    )
+    batch_id = up.json()["batch_id"]
+    anl = client.post(f"/api/image-verification/analyze/{batch_id}", headers=headers)
+    analysis_id = anl.json()["analysis_id"]
+
+    # 2. Confirm and submit to authoritative 6-factor engine
+    confirm_payload = {
+        "analysis_id": analysis_id,
+        "batch_id": batch_id,
+        "confirmed_fields": {
+            "product_name": "Amoxicillin 500mg Capsules",
+            "gtin": "89012345678901",
+            "batch_number": "BATCH-2026-001",
+            "serial_number": "SER-PC-000001",
+            "expiry_date": "2028-01-09",
+            "manufacturer": "PharmaCore Laboratories",
+        },
+    }
+    verify_resp = client.post("/api/image-verification/confirm-and-verify", json=confirm_payload, headers=headers)
+    assert verify_resp.status_code == 200
+    res = verify_resp.json()
+
+    # The deterministic engine returns VERIFIED
+    assert res["status"] == "VERIFIED"
+    assert res["confidence_score"] >= 80
+    assert res["verification"]["matched_medicine_id"] is not None
+    assert len(res["verification"]["checks"]) >= 4
+
+
+def test_confirm_and_verify_unregistered_product(client, user1_token):
+    """Submitting an unregistered product identifier returns NOT_FOUND status."""
+    headers = {"Authorization": f"Bearer {user1_token}"}
+    img_bytes = create_test_image_bytes(width=500, height=500)
+
+    up = client.post(
+        "/api/image-verification/upload",
+        files=[("files", ("unknown.jpg", img_bytes, "image/jpeg"))],
+        headers=headers,
+    )
+    batch_id = up.json()["batch_id"]
+    anl = client.post(f"/api/image-verification/analyze/{batch_id}", headers=headers)
+    analysis_id = anl.json()["analysis_id"]
+
+    confirm_payload = {
+        "analysis_id": analysis_id,
+        "batch_id": batch_id,
+        "confirmed_fields": {
+            "gtin": "99999999999999",
+            "batch_number": "UNKNOWN-BATCH",
+        },
+    }
+    verify_resp = client.post("/api/image-verification/confirm-and-verify", json=confirm_payload, headers=headers)
+    assert verify_resp.status_code == 200
+    res = verify_resp.json()
+
+    # Not found in registry
+    assert res["status"] == "NOT_FOUND"
+    assert res["confidence_score"] == 0
+
+
+def test_confirm_and_verify_expired_product(client, user1_token):
+    """Submitting confirmed details for an expired registered product returns EXPIRED status."""
+    headers = {"Authorization": f"Bearer {user1_token}"}
+    img_bytes = create_test_image_bytes(width=500, height=500)
+
+    up = client.post(
+        "/api/image-verification/upload",
+        files=[("files", ("expired.jpg", img_bytes, "image/jpeg"))],
+        headers=headers,
+    )
+    batch_id = up.json()["batch_id"]
+    anl = client.post(f"/api/image-verification/analyze/{batch_id}", headers=headers)
+    analysis_id = anl.json()["analysis_id"]
+
+    # GTIN 89012345678908 has registered expiry 2025-07-09 (expired) and batch BATCH-2025-012
+    confirm_payload = {
+        "analysis_id": analysis_id,
+        "batch_id": batch_id,
+        "confirmed_fields": {
+            "product_name": "Ibuprofen 400 mg Tablets",
+            "gtin": "89012345678908",
+            "batch_number": "BATCH-2025-012",
+            "expiry_date": "2025-07-09",
+        },
+    }
+    verify_resp = client.post("/api/image-verification/confirm-and-verify", json=confirm_payload, headers=headers)
+    assert verify_resp.status_code == 200
+    res = verify_resp.json()
+
+    assert res["status"] == "EXPIRED"
+
+
+def test_confirm_and_verify_duplicate_serial(client, user1_token, user2_token):
+    """Submitting a duplicated serial number across users triggers reuse check and SUSPICIOUS status."""
+    headers1 = {"Authorization": f"Bearer {user1_token}"}
+    headers2 = {"Authorization": f"Bearer {user2_token}"}
+    img_bytes = create_test_image_bytes(width=500, height=500)
+
+    # First verification by User 1
+    up1 = client.post(
+        "/api/image-verification/upload",
+        files=[("files", ("p1.jpg", img_bytes, "image/jpeg"))],
+        headers=headers1,
+    )
+    batch1 = up1.json()["batch_id"]
+    anl1 = client.post(f"/api/image-verification/analyze/{batch1}", headers=headers1)
+
+    r1 = client.post(
+        "/api/image-verification/confirm-and-verify",
+        json={
+            "analysis_id": anl1.json()["analysis_id"],
+            "batch_id": batch1,
+            "confirmed_fields": {
+                "gtin": "89012345678901",
+                "batch_number": "BATCH-2026-001",
+                "serial_number": "SER-DUPE-IMAGE-TEST",
+                "expiry_date": "2028-01-09",
+            },
+        },
+        headers=headers1,
+    )
+    assert r1.status_code == 200
+
+    # Second verification with exact same serial by User 2 (triggers cross-user duplicate reuse)
+    up2 = client.post(
+        "/api/image-verification/upload",
+        files=[("files", ("p2.jpg", img_bytes, "image/jpeg"))],
+        headers=headers2,
+    )
+    batch2 = up2.json()["batch_id"]
+    anl2 = client.post(f"/api/image-verification/analyze/{batch2}", headers=headers2)
+
+    resp2 = client.post(
+        "/api/image-verification/confirm-and-verify",
+        json={
+            "analysis_id": anl2.json()["analysis_id"],
+            "batch_id": batch2,
+            "confirmed_fields": {
+                "gtin": "89012345678901",
+                "batch_number": "BATCH-2026-001",
+                "serial_number": "SER-DUPE-IMAGE-TEST",
+                "expiry_date": "2028-01-09",
+            },
+        },
+        headers=headers2,
+    )
+    assert resp2.status_code == 200
+    res2 = resp2.json()
+
+    # Reuse check must be FAIL and status SUSPICIOUS
+    assert res2["status"] == "SUSPICIOUS"
+    checks = res2["verification"]["checks"]
+    reuse_check = next((c for c in checks if c["field"] == "serial_uniqueness"), None)
+    assert reuse_check is not None
+    assert reuse_check["status"] == "FAIL"
+
+
+
+

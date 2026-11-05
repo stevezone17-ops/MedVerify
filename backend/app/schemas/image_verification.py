@@ -118,3 +118,44 @@ class ImageAnalysisResult(BaseModel):
     @field_serializer("created_at", when_used="json")
     def serialize_created_at(self, v: Optional[datetime]) -> Optional[str]:
         return to_iso_utc(v)
+
+
+class ConfirmedMedicineFields(BaseModel):
+    """User-reviewed and confirmed medicine parameters prior to authoritative verification."""
+
+    product_name: Optional[str] = None
+    gtin: Optional[str] = None
+    batch_number: Optional[str] = None
+    serial_number: Optional[str] = None
+    expiry_date: Optional[str] = None
+    manufacturer: Optional[str] = None
+
+
+class ConfirmAndVerifyImageRequest(BaseModel):
+    """Request to submit user-confirmed parameters to the authoritative 6-factor engine."""
+
+    analysis_id: str
+    batch_id: str
+    confirmed_fields: ConfirmedMedicineFields
+    raw_identifier: Optional[str] = None
+
+
+class ImageVerificationCombinedResult(BaseModel):
+    """Authoritative response combining deterministic verification with vision evidence."""
+
+    verification_id: str
+    status: str  # VERIFIED | REVIEW | SUSPICIOUS | NOT_FOUND | EXPIRED | REQUIRES_REVIEW | INVALID
+    confidence_score: int
+    verification: Dict[str, Any]  # Full VerificationResult from deterministic engine
+    image_analysis: ImageAnalysisResult
+    confirmed_parameters: Dict[str, Optional[str]]
+    created_at: Optional[datetime] = None
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def validate_created_at(cls, v):
+        return normalize_datetime(v)
+
+    @field_serializer("created_at", when_used="json")
+    def serialize_created_at(self, v: Optional[datetime]) -> Optional[str]:
+        return to_iso_utc(v)

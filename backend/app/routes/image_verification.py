@@ -1,7 +1,8 @@
-"""FastAPI endpoints for authenticated medicine packaging image upload and retrieval."""
+"""FastAPI endpoints for authenticated medicine packaging image upload, analysis, and verification."""
 
 import uuid
 from typing import List, Optional, Dict, Any
+from datetime import datetime, timezone
 from fastapi import (
     APIRouter,
     Depends,
@@ -17,7 +18,12 @@ from app.schemas.image_verification import (
     UploadedImageMetadata,
     ImageUploadBatchResponse,
     ImageAnalysisResult,
+    ConfirmAndVerifyImageRequest,
+    ImageVerificationCombinedResult,
 )
+from app.schemas.verification import VerifyRequest
+from app.services.verification_engine import verify_medicine
+from app.database import verifications_col
 from app.services.auth_service import get_current_user
 from app.services.image_service import (
     image_service,
@@ -222,3 +228,103 @@ def get_analysis_result(
             detail=str(p_err),
         )
 
+
+@router.post("/confirm-and-verify", response_model=ImageVerificationCombinedResult)
+def confirm_and_verify_image(
+    req: ConfirmAndVerifyImageRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Submit user-confirmed medicine details to the authoritative 6-factor deterministic engine.
+    
+    CRITICAL INVARIANT: The deterministic engine is the SOLE authority for authenticity determinations.
+    Gemini vision never declares authenticity; it only assists in optical extraction.
+    """
+    user_id = str(current_user.get("_id") or current_user.get("id"))
+    is_admin = str(current_user.get("role", "")).lower() == "admin"
+
+    # 1. Enforce IDOR protection on analysis record
+    try:
+        analysis = image_analysis_service.get_analysis_by_id(
+            analysis_id=req.analysis_id,
+            user_id=user_id,
+            is_admin=is_admin,
+        )
+    except (ValueError, PermissionError) as err:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(err))
+
+    # 2. Build canonical verification identifier from confirmed fields
+    cf = req.confirmed_fields
+    if req.raw_identifier:
+        resolved_identifier = req.raw_identifier.strip()
+    elif cf.gtin:
+        # Assemble standard GS1 payload
+        parts: List[str] = [f"(01){cf.gtin.strip()}"]
+        if cf.batch_number:
+            parts.append(f"(10){cf.batch_number.strip()}")
+        if cf.expiry_date:
+            exp_clean = cf.expiry_date.replace("-", "")
+            if len(exp_clean) == 8:
+                # YYYYMMDD -> YYMMDD
+                exp_clean = exp_clean[2:]
+            parts.append(f"(17){exp_clean}")
+        if cf.serial_number:
+            parts.append(f"(21){cf.serial_number.strip()}")
+        resolved_identifier = "".join(parts)
+    elif cf.batch_number:
+        resolved_identifier = cf.batch_number.strip()
+    elif cf.product_name:
+        resolved_identifier = cf.product_name.strip()
+    else:
+        resolved_identifier = req.analysis_id
+
+    # 3. Call authoritative deterministic 6-factor verification engine
+    verify_req = VerifyRequest(
+        identifier=resolved_identifier,
+        batch_number=cf.batch_number,
+        serial_number=cf.serial_number,
+        expiry_date=cf.expiry_date,
+        product_name=cf.product_name,
+        manufacturer=cf.manufacturer,
+        method="IMAGE_VERIFICATION",
+    )
+
+    try:
+        verification_result = verify_medicine(verify_req, user=current_user)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Verification engine failure: {exc}",
+        )
+
+    # 4. Associate the verification record with image analysis & packaging observations
+    verifications_col().update_one(
+        {"_id": verification_result.verification_id},
+        {
+            "$set": {
+                "image_analysis_id": req.analysis_id,
+                "image_batch_id": req.batch_id,
+                "packaging_condition": analysis.packaging_condition.model_dump(),
+                "printed_vs_barcode_mismatch": analysis.printed_vs_barcode_mismatch,
+                "mismatch_details": analysis.mismatch_details,
+            }
+        },
+    )
+
+    confirmed_dict = {
+        "product_name": cf.product_name,
+        "gtin": cf.gtin,
+        "batch_number": cf.batch_number,
+        "serial_number": cf.serial_number,
+        "expiry_date": cf.expiry_date,
+        "manufacturer": cf.manufacturer,
+    }
+
+    return ImageVerificationCombinedResult(
+        verification_id=verification_result.verification_id,
+        status=verification_result.status,
+        confidence_score=verification_result.confidence_score,
+        verification=verification_result.model_dump(),
+        image_analysis=analysis,
+        confirmed_parameters=confirmed_dict,
+        created_at=datetime.now(timezone.utc),
+    )

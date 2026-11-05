@@ -38,7 +38,7 @@ class VerifyRequest(BaseModel):
     expiry_date: Optional[str] = None
     method: Optional[str] = Field(
         "QR",
-        pattern="^(QR|DATAMATRIX|BARCODE|PACKAGING_OCR|MANUAL|NFC)$",
+        pattern="^(QR|DATAMATRIX|BARCODE|PACKAGING_OCR|MANUAL|NFC|IMAGE_VERIFICATION)$",
         description="Verification input method",
     )
 
