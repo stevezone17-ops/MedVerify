@@ -154,6 +154,19 @@ export const AdminShell: React.FC = () => {
     return location.pathname.startsWith(to);
   };
 
+  const getSectionTitle = () => {
+    const path = location.pathname;
+    if (path === '/admin' || path === '/admin/') return 'Platform Overview';
+    if (path.startsWith('/admin/scanner')) return 'Forensic Scanner';
+    if (path.startsWith('/admin/audit')) return 'Global Audit Trail';
+    if (path.startsWith('/admin/registry')) return 'Product Catalog';
+    if (path.startsWith('/admin/users')) return 'User Management';
+    if (path.startsWith('/admin/system')) return 'System Health';
+    if (path.startsWith('/admin/specs')) return 'Engine Specs';
+    if (path.startsWith('/admin/result')) return 'Forensic Certificate';
+    return 'Operations Console';
+  };
+
   return (
     <div className="admin-shell-root">
       {/* Sidebar Navigation Rail */}
@@ -165,7 +178,7 @@ export const AdminShell: React.FC = () => {
             </div>
             <div className="admin-shell-brand-text">
               <span className="admin-shell-brand-title">MEDVERIFY</span>
-              <span className="admin-shell-brand-role">COMMAND CONSOLE</span>
+              <span className="admin-shell-brand-role">OPERATIONS CONSOLE</span>
             </div>
           </NavLink>
 
@@ -273,41 +286,7 @@ export const AdminShell: React.FC = () => {
             <div className="admin-shell-breadcrumb">
               <span className="admin-shell-breadcrumb-root">MEDVERIFY / ADMIN</span>
               <ChevronRight size={13} className="admin-shell-breadcrumb-sep" />
-              <span className="admin-shell-breadcrumb-current">OPERATIONAL CONSOLE</span>
-            </div>
-          </div>
-
-          {/* Quick Metrics Ticker */}
-          <div className="admin-shell-topbar-center" role="region" aria-label="System verification metrics">
-            <div className="admin-shell-ticker-item">
-              <span className="admin-shell-ticker-label">Total Scans:</span>
-              <span className="admin-shell-ticker-value tabular-nums">
-                {(analytics?.total_verifications ?? 0).toLocaleString()}
-              </span>
-            </div>
-            <span className="admin-shell-ticker-sep" aria-hidden="true">·</span>
-            <div className="admin-shell-ticker-item">
-              <span className="admin-shell-ticker-label">Verified Rate:</span>
-              <span className="admin-shell-ticker-value verified tabular-nums">
-                {analytics?.total_verifications
-                  ? `${Math.round(((analytics?.status_breakdown?.VERIFIED || 0) / analytics.total_verifications) * 100)}%`
-                  : '100%'}
-              </span>
-            </div>
-            <span className="admin-shell-ticker-sep" aria-hidden="true">·</span>
-            <div className="admin-shell-ticker-item">
-              <span className="admin-shell-ticker-label">Anomalies:</span>
-              <span
-                className={`admin-shell-ticker-value tabular-nums ${
-                  ((analytics?.status_breakdown?.SUSPICIOUS || 0) + (analytics?.status_breakdown?.NOT_FOUND || 0)) > 0
-                    ? 'anomaly'
-                    : ''
-                }`}
-              >
-                {(
-                  (analytics?.status_breakdown?.SUSPICIOUS || 0) + (analytics?.status_breakdown?.NOT_FOUND || 0)
-                ).toLocaleString()}
-              </span>
+              <span className="admin-shell-breadcrumb-current">{getSectionTitle().toUpperCase()}</span>
             </div>
           </div>
 
@@ -329,14 +308,17 @@ export const AdminShell: React.FC = () => {
               onClick={() => setAskMedVerifyOpen(true)}
               className="admin-shell-portal-btn"
               title="Open Gemini Conversational Assistant"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
             >
-              <Sparkles size={13} />
+              <Sparkles size={14} style={{ color: '#d97706' }} />
               <span>AI Assistant</span>
             </button>
 
-            <NavLink to="/verify" className="admin-shell-portal-btn" title="Open Consumer Verification Portal">
-              <ScanLine size={13} />
+            <NavLink
+              to="/verify"
+              className="admin-shell-portal-btn admin-shell-portal-btn--primary"
+              title="Open Consumer Verification Portal"
+            >
+              <ScanLine size={14} />
               <span>Open Consumer Portal</span>
             </NavLink>
           </div>
