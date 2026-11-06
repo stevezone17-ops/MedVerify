@@ -860,6 +860,29 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
                 "GS1 Application Identifier (10) represents Batch Number, AI (17) represents Expiry Date, and AI (21) represents Serial Number.",
                 "Mismatched packaging parameters must be quarantined and reported to the dispensing pharmacy and drug regulatory authorities.",
             ]
+        elif any(w in q_lower for w in ["active pharmaceutical ingredient", "api", "humidity", "moisture", "blister packaging", "protect"]):
+            answer = (
+                "An Active Pharmaceutical Ingredient (API) is the biologically active chemical substance in a drug product that produces the intended clinical effect. "
+                "Pharmaceutical packaging—such as aluminum/PVC blister packs and desiccant-lined HDPE bottles—provides an impermeable physical barrier and hermetic seal. "
+                "This packaging protects sensitive API molecules from environmental humidity, atmospheric moisture, oxidative degradation, light exposure, and microbial contamination."
+            )
+            facts = [
+                "Active Pharmaceutical Ingredients (APIs) require environmental barrier protection against moisture and humidity.",
+                "Blister packs provide hermetic isolation to prevent pharmaceutical active ingredient degradation.",
+            ]
+        elif ("01" in q_lower or "gtin" in q_lower) and ("21" in q_lower or "serial" in q_lower or "10" in q_lower or "17" in q_lower):
+            answer = (
+                "Under GS1 Healthcare standards, Application Identifiers (AIs) differentiate product-level and unit-level traceability attributes:\n"
+                "- **AI (01) — GTIN (Global Trade Item Number):** A 14-digit standardized numeric code identifying the drug product formulation, strength, and packaging configuration.\n"
+                "- **AI (10) — Batch / Lot Number:** Alphanumeric identifier tracking the specific manufacturing production batch.\n"
+                "- **AI (17) — Expiration Date:** 6 numeric digits in YYMMDD format indicating regulatory shelf life.\n"
+                "- **AI (21) — Serial Number:** A randomized unique serial identifier assigned to each individual unit pack, enabling item-level serialization and tamper verification."
+            )
+            facts = [
+                "GS1 Application Identifier (01) encodes the 14-digit GTIN product identifier.",
+                "GS1 Application Identifier (21) encodes the unit-level serialized identifier.",
+                "GS1 Application Identifiers (10) and (17) encode the batch number and expiry date respectively.",
+            ]
         elif any(w in q_lower for w in ["gtin", "barcode", "datamatrix", "01"]):
             answer = (
                 "A GTIN (Global Trade Item Number) is a globally unique identifier defined by GS1 standards. "
