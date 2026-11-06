@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, Any
 from app.db.supabase_client import get_supabase_client
+from app.database import cabinet_col
 from app.utils.timestamps import to_iso_utc
 
 logger = logging.getLogger("medverify.repo.cabinet")
@@ -37,6 +38,14 @@ class CabinetRepository:
             "updated_at": to_iso_utc(now),
         }
 
+        # 1. MongoDB persistence (reliable storage across server restarts)
+        try:
+            mongo_doc = dict(doc)
+            mongo_doc["_id"] = cab_id
+            cabinet_col().update_one({"_id": cab_id}, {"$set": mongo_doc}, upsert=True)
+        except Exception as mongo_err:
+            logger.warning("MongoDB cabinet insert warning: %s", mongo_err)
+
         client = get_supabase_client()
         if client:
             try:
@@ -61,16 +70,37 @@ class CabinetRepository:
         if client:
             try:
                 res = client.table("medicine_cabinet").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
-                if res.data:
+                if res.data and len(res.data) > 0:
                     return res.data
             except Exception as exc:
                 logger.warning("Supabase list_user_cabinet failed: %s", exc)
+
+        # Retrieve from persistent MongoDB store
+        try:
+            mongo_docs = list(cabinet_col().find({"user_id": user_id}).sort("created_at", -1))
+            if mongo_docs:
+                for d in mongo_docs:
+                    if "_id" in d and "id" not in d:
+                        d["id"] = str(d["_id"])
+                    d.pop("_id", None)
+                return mongo_docs
+        except Exception as mongo_err:
+            logger.warning("MongoDB list_user_cabinet failed: %s", mongo_err)
 
         return [c for c in _cabinet_store if c.get("user_id") == user_id]
 
     def update(self, cabinet_id: str, user_id: str, updates: dict[str, Any]) -> Optional[dict[str, Any]]:
         """Update a cabinet entry's nickname, notes, or reminder settings."""
         updates["updated_at"] = to_iso_utc(datetime.now(timezone.utc))
+
+        # Update in MongoDB
+        try:
+            cabinet_col().update_one(
+                {"$or": [{"id": cabinet_id}, {"_id": cabinet_id}], "user_id": user_id},
+                {"$set": updates},
+            )
+        except Exception as mongo_err:
+            logger.warning("MongoDB cabinet update warning: %s", mongo_err)
 
         client = get_supabase_client()
         if client:
@@ -96,6 +126,17 @@ class CabinetRepository:
 
     def remove(self, cabinet_id: str, user_id: str) -> bool:
         """Remove a medicine from user's cabinet."""
+        removed_from_mongo = False
+        try:
+            del_res = cabinet_col().delete_one({
+                "$or": [{"id": cabinet_id}, {"_id": cabinet_id}],
+                "user_id": user_id,
+            })
+            if del_res.deleted_count > 0:
+                removed_from_mongo = True
+        except Exception as mongo_err:
+            logger.warning("MongoDB cabinet remove warning: %s", mongo_err)
+
         client = get_supabase_client()
         if client:
             try:
@@ -106,4 +147,4 @@ class CabinetRepository:
         global _cabinet_store
         before = len(_cabinet_store)
         _cabinet_store = [c for c in _cabinet_store if not (c.get("id") == cabinet_id and c.get("user_id") == user_id)]
-        return len(_cabinet_store) < before
+        return removed_from_mongo or (len(_cabinet_store) < before)

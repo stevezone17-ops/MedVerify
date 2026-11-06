@@ -52,6 +52,10 @@ def image_analyses_col() -> Collection:
     return get_db()["image_analyses"]
 
 
+def cabinet_col() -> Collection:
+    return get_db()["medicine_cabinet"]
+
+
 # ---------------------------------------------------------------------------
 # Index creation — idempotent, safe to call on every startup
 # ---------------------------------------------------------------------------
@@ -66,6 +70,7 @@ def ensure_indexes() -> None:
     verifications_col().create_index([("user_id", ASCENDING), ("created_at", -1)])
     verifications_col().create_index([("status", ASCENDING)])
     verifications_col().create_index([("raw_identifier", ASCENDING)])
+    verifications_col().create_index([("parsed_data.serial_number", ASCENDING), ("status", ASCENDING)])
 
     users_col().create_index([("email", ASCENDING)], unique=True)
 
@@ -74,3 +79,6 @@ def ensure_indexes() -> None:
 
     image_analyses_col().create_index([("user_id", ASCENDING), ("created_at", -1)])
     image_analyses_col().create_index([("batch_id", ASCENDING)])
+
+    cabinet_col().create_index([("id", ASCENDING)], unique=True)
+    cabinet_col().create_index([("user_id", ASCENDING), ("created_at", -1)])
