@@ -364,6 +364,44 @@ def test_gs1_datamatrix_parsing_and_mismatch_detection():
     assert any("Expiration date mismatch" in d for d in tampered_details)
 
 
+def test_image_analysis_service_handles_barcode_mismatch_without_unbound_error():
+    """Ensure _build_and_persist_result gracefully handles mismatch details in observations."""
+    from app.services.image_analysis_service import image_analysis_service
+    from app.schemas.image_verification import UploadedImageMetadata
+    from datetime import datetime, timezone
+
+    fake_meta = UploadedImageMetadata(
+        image_id="img_test_mismatch",
+        user_id="usr_test",
+        slot="front",
+        file_name="test.jpg",
+        mime_type="image/jpeg",
+        file_size=1024,
+        width=500,
+        height=500,
+        storage_path="storage/test.jpg",
+        created_at=datetime.now(timezone.utc),
+    )
+
+    raw_data = {
+        "medicine_name": "Amoxicillin",
+        "batch_number": "PRINTED-BATCH-123",
+        "barcode_detected": True,
+        "barcode_payload": "(01)08901234567890(10)BARCODE-BATCH-999",
+        "observations": ["Original observation"],
+    }
+
+    res = image_analysis_service._build_and_persist_result(
+        batch_id="batch_mismatch_test",
+        user_id="usr_test",
+        images_meta=[fake_meta],
+        raw_data=raw_data,
+    )
+    assert res.printed_vs_barcode_mismatch is True
+    assert len(res.mismatch_details) > 0
+    assert any("Batch number mismatch" in d for d in res.observations)
+
+
 def test_existing_live_scanner_remains_intact(client, user1_token):
     """Verify that existing deterministic scanner endpoint POST /api/verify remains intact."""
     headers = {"Authorization": f"Bearer {user1_token}"}

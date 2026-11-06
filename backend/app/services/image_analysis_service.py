@@ -203,6 +203,18 @@ class ImageAnalysisService:
             confidence=conf,
         )
 
+        extracted_text_blocks = raw_data.get("extracted_text_blocks") or []
+        if isinstance(extracted_text_blocks, str):
+            extracted_text_blocks = [extracted_text_blocks]
+        else:
+            extracted_text_blocks = list(extracted_text_blocks)
+
+        observations = raw_data.get("observations") or []
+        if isinstance(observations, str):
+            observations = [observations]
+        else:
+            observations = list(observations)
+
         barcode_detected = bool(raw_data.get("barcode_detected", False))
         barcode_type = raw_data.get("barcode_type")
         barcode_payload = raw_data.get("barcode_payload")
@@ -262,14 +274,6 @@ class ImageAnalysisService:
             mismatch_found, mismatch_details = compare_ocr_with_barcode(ocr_dict, barcode_fields)
             if mismatch_found:
                 observations.extend(mismatch_details)
-
-        extracted_text_blocks = raw_data.get("extracted_text_blocks") or []
-        if isinstance(extracted_text_blocks, str):
-            extracted_text_blocks = [extracted_text_blocks]
-
-        observations = raw_data.get("observations") or []
-        if isinstance(observations, str):
-            observations = [observations]
 
         if not barcode_detected:
             observations.append(

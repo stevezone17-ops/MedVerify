@@ -71,3 +71,6 @@ def ensure_indexes() -> None:
 
     uploaded_images_col().create_index([("user_id", ASCENDING), ("created_at", -1)])
     uploaded_images_col().create_index([("batch_id", ASCENDING)])
+
+    image_analyses_col().create_index([("user_id", ASCENDING), ("created_at", -1)])
+    image_analyses_col().create_index([("batch_id", ASCENDING)])
