@@ -165,3 +165,14 @@ def test_verification_idor_access_control(user_a_token, user_b_token, admin_toke
     admin_res = client.get(f"/api/verifications/{v_id}", headers=headers_admin)
     assert admin_res.status_code == 200
     assert admin_res.json()["verification_id"] == v_id
+
+
+def test_security_headers_present():
+    """Verify that all responses include defensive HTTP security headers."""
+    resp = client.get("/api/health")
+    assert resp.status_code == 200
+    assert resp.headers.get("x-content-type-options") == "nosniff"
+    assert resp.headers.get("x-frame-options") == "DENY"
+    assert resp.headers.get("x-xss-protection") == "1; mode=block"
+    assert resp.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+
