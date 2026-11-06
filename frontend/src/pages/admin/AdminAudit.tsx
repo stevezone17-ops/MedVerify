@@ -77,7 +77,7 @@ export const AdminAudit: React.FC = () => {
       {/* Header */}
       <div className="admin-audit-header">
         <div>
-          <span className="admin-audit-eyebrow">MEDVERIFY / FORENSIC AUDIT TRAIL</span>
+          <span className="admin-audit-eyebrow">GLOBAL AUDIT TRAIL</span>
           <h1 className="admin-audit-title">Global Verification Audit Log</h1>
           <p className="admin-audit-subtitle">
             Immutable system-wide ledger of every medicine verification event across all clinical users,
