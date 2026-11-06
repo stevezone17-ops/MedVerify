@@ -100,7 +100,7 @@ export const AdminCommandCenter: React.FC = () => {
       {/* Platform Header */}
       <div className="command-center-header">
         <div>
-          <span className="command-center-eyebrow">MEDVERIFY / ADMIN</span>
+          <span className="command-center-eyebrow">OPERATIONAL OVERVIEW</span>
           <h1 className="command-center-title">Verification Operations</h1>
           <p className="command-center-subtitle">
             System-wide verification activity and pharmaceutical registry management.
