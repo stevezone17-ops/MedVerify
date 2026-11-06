@@ -48,7 +48,7 @@ export const AdminSystemHealth: React.FC = () => {
       {/* Header */}
       <div className="admin-health-header">
         <div>
-          <span className="admin-health-eyebrow">MEDVERIFY / INFRASTRUCTURE TELEMETRY</span>
+          <span className="admin-health-eyebrow">SYSTEM HEALTH & TELEMETRY</span>
           <h1 className="admin-health-title">System Health & Telemetry</h1>
           <p className="admin-health-subtitle">
             Authoritative real-time diagnostic status of core verification services, MongoDB persistence,

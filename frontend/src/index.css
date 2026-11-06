@@ -8534,51 +8534,63 @@ button {
 .admin-health-eyebrow {
   font-size: 11px;
   font-weight: 700;
-  color: #176B4D;
+  color: var(--admin-brand, #0f766e);
   letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .admin-health-title {
-  font-size: 28px;
-  font-weight: 800;
-  color: #202B27;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--admin-text-primary, #0f172a);
   margin-top: 4px;
+  letter-spacing: -0.02em;
 }
 
 .admin-health-subtitle {
-  font-size: 14px;
-  color: #89938D;
+  font-size: 13.5px;
+  color: var(--admin-text-muted, #64748b);
   max-width: 680px;
   margin-top: 4px;
+  line-height: 1.5;
 }
 
 .admin-health-refresh-btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 9px 16px;
-  border-radius: 7px;
-  background-color: #202B27;
-  border: 1px solid #E1E7E1;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background-color: var(--admin-surface, #ffffff);
+  border: 1px solid var(--admin-border, #e2e8f0);
+  color: var(--admin-text-secondary, #475569);
+  font-size: 12.5px;
+  font-weight: 600;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
+}
+
+.admin-health-refresh-btn:hover:not(:disabled) {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+  color: var(--admin-text-primary, #0f172a);
 }
 
 .admin-health-banner {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
-  border-radius: 12px;
-  border: 1px solid #E1E7E1;
-  background-color: #FFFFFF;
+  padding: 18px 22px;
+  border-radius: 10px;
+  border: 1px solid var(--admin-border, #e2e8f0);
+  background-color: var(--admin-surface, #ffffff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 }
 
 .admin-health-banner.healthy {
-  border-color: rgba(35, 132, 95, 0.3);
-  background: linear-gradient(135deg, rgba(232, 243, 236, 0.8), #FFFFFF);
+  border-color: #bbf7d0;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
 }
 
 .admin-health-banner-left {
@@ -8588,25 +8600,27 @@ button {
 }
 
 .admin-health-banner-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background-color: rgba(35, 132, 95, 0.08);
-  color: #23845F;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background-color: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #059669;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .admin-health-banner h3 {
-  font-size: 16px;
-  font-weight: 800;
-  color: #23845F;
+  font-size: 15px;
+  font-weight: 700;
+  color: #065f46;
+  margin: 0;
 }
 
 .admin-health-banner p {
-  font-size: 13px;
-  color: #89938D;
+  font-size: 12.5px;
+  color: var(--admin-text-secondary, #475569);
   margin-top: 2px;
 }
 
@@ -8615,35 +8629,42 @@ button {
   align-items: center;
   gap: 10px;
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: #89938D;
+  font-size: 11.5px;
+  color: var(--admin-text-muted, #64748b);
 }
 
 .admin-health-banner-dot {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background-color: #64748b;
+  background-color: #94a3b8;
 }
 
 .admin-health-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 20px;
+  gap: 16px;
 }
 
 .admin-health-card {
-  background-color: #FFFFFF;
-  border: 1px solid #E1E7E1;
-  border-radius: 14px;
-  padding: 22px;
+  background-color: var(--admin-surface, #ffffff);
+  border: 1px solid var(--admin-border, #e2e8f0);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
+}
+
+.admin-health-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.04);
 }
 
 .admin-health-card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .admin-health-card-title-group {
@@ -8662,84 +8683,98 @@ button {
 }
 
 .admin-health-card-icon.db {
-  background-color: rgba(35, 132, 95, 0.08);
-  color: #23845F;
+  background-color: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #059669;
 }
 
 .admin-health-card-icon.engine {
-  background-color: rgba(23, 107, 77, 0.08);
-  color: #176B4D;
+  background-color: var(--admin-brand-light, #f0fdfa);
+  border: 1px solid var(--admin-brand-border, #ccfbf1);
+  color: var(--admin-brand, #0f766e);
 }
 
 .admin-health-card-icon.catalog {
-  background-color: rgba(217, 154, 40, 0.08);
-  color: #D99A28;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #2563eb;
 }
 
 .admin-health-card-icon.auth {
-  background-color: rgba(57, 121, 168, 0.08);
-  color: #3979A8;
+  background-color: #fdf4ff;
+  border: 1px solid #f5d0fe;
+  color: #9333ea;
 }
 
 .admin-health-card-icon.api {
-  background-color: rgba(217, 76, 76, 0.06);
-  color: #D94C4C;
+  background-color: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #ea580c;
 }
 
 .admin-health-card h4 {
   font-size: 14px;
   font-weight: 700;
-  color: #202B27;
+  color: var(--admin-text-primary, #0f172a);
+  margin: 0;
 }
 
 .admin-health-card span {
-  font-size: 11px;
-  color: #89938D;
+  font-size: 11.5px;
+  color: var(--admin-text-muted, #64748b);
 }
 
 .admin-health-card-tag {
-  font-size: 10px;
-  font-weight: 800;
-  padding: 2px 7px;
-  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2.5px 8px;
+  border-radius: 5px;
 }
 
 .admin-health-card-tag.online {
-  background-color: rgba(35, 132, 95, 0.08);
-  color: #23845F;
+  background-color: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
 }
 
 .admin-health-metrics-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .admin-health-metric-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #E8ECE7;
-  font-size: 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 12.5px;
+}
+
+.admin-health-metric-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 .metric-label {
-  color: #89938D;
+  color: var(--admin-text-muted, #64748b);
 }
 
 .metric-val {
-  font-weight: 700;
-  color: #202B27;
+  font-weight: 600;
+  color: var(--admin-text-primary, #0f172a);
   font-family: var(--font-mono);
 }
 
 .metric-val.highlight {
-  color: #176B4D;
+  color: var(--admin-brand, #0f766e);
+  font-weight: 700;
 }
 
 .metric-val.active {
-  color: #23845F;
+  color: #059669;
+  font-weight: 700;
 }
 
 /* ---- ADMIN AUDIT STYLES ---- */
