@@ -270,6 +270,15 @@ export const AdminShell: React.FC = () => {
         </div>
       </aside>
 
+      {/* Mobile Sidebar Backdrop */}
+      {mobileMenuOpen && (
+        <div
+          className="admin-shell-mobile-backdrop"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Main Content Viewport */}
       <div className="admin-shell-main-wrap">
         {/* Top Operational Header */}
