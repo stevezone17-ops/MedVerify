@@ -187,7 +187,7 @@ export const AdminRegistry: React.FC = () => {
       {/* Header */}
       <div className="admin-registry-header">
         <div>
-          <span className="admin-registry-eyebrow">MEDVERIFY / MASTER PRODUCT CATALOG</span>
+          <span className="admin-registry-eyebrow">PRODUCT CATALOG</span>
           <h1 className="admin-registry-title">Product Registry Management</h1>
           <p className="admin-registry-subtitle">
             Authorize official pharmaceutical GTINs, active batch runs, approved manufacturers, and packaging parameters.

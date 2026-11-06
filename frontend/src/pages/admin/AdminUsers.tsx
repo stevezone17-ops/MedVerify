@@ -138,7 +138,7 @@ export const AdminUsers: React.FC = () => {
       {/* Page Header */}
       <div className="admin-users-header">
         <div>
-          <span className="admin-users-eyebrow">MEDVERIFY / SECURITY & RBAC</span>
+          <span className="admin-users-eyebrow">USER MANAGEMENT</span>
           <h1 className="admin-users-title">User Management</h1>
           <p className="admin-users-subtitle">
             Authorize operator access, control role permissions (Admin vs. User), and monitor authentication logs.
