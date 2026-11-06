@@ -92,10 +92,9 @@ def test_admin_medicine_registry_lifecycle_affects_consumer_verification(client,
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
     new_gtin = "89099998888777"
-    # Ensure clean state
-    existing = medicines_repo.get_by_gtin(new_gtin)
-    if existing:
-        medicines_repo.delete(str(existing.get("id") or existing.get("_id")))
+    # Ensure completely clean state (remove from MongoDB collection)
+    from app.database import medicines_col
+    medicines_col().delete_many({"product_identifier": new_gtin})
 
     # Step 1: Consumer verifies unknown GTIN -> NOT_FOUND
     pre_resp = client.post("/api/verify", json={"identifier": new_gtin}, headers=consumer_headers)
@@ -160,5 +159,6 @@ def test_admin_medicine_registry_lifecycle_affects_consumer_verification(client,
     deact_resp = client.delete(f"/api/admin/medicines/{med_id}", headers=admin_headers)
     assert deact_resp.status_code == 200
 
-    # Cleanup cabinet item
+    # Cleanup cabinet item & medicine
     client.delete(f"/api/user/cabinet/{cab_id}", headers=consumer_headers)
+    medicines_col().delete_many({"product_identifier": new_gtin})
