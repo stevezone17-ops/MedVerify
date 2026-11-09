@@ -21,19 +21,18 @@ import type {
   VerificationReport,
 } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import {
+  API_BASE_URL,
+  buildEndpointUrl,
+  API_ENDPOINTS,
+  validateApiConfig,
+} from './config';
+
+export { API_BASE_URL, buildEndpointUrl, API_ENDPOINTS, validateApiConfig };
 
 // ---------------------------------------------------------------------------
 // Base fetch wrapper
 // ---------------------------------------------------------------------------
-
-const RAW_API_URL = import.meta.env.VITE_API_URL || '';
-export const API_BASE_URL = RAW_API_URL.replace(/\/$/, '');
-
-export function buildEndpointUrl(path: string): string {
-  if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  if (!API_BASE_URL) return path;
-  return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
-}
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('medverify_token');
