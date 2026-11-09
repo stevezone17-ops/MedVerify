@@ -1,20 +1,36 @@
 """FastAPI application entry point."""
 
+import logging
+import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.database import ensure_indexes
+from app.database import ensure_indexes, check_database_health, close_client
 from app.routes import verification, history, medicines, auth, admin, user, reports, cabinet, notifications, ai, image_verification
+
+logger = logging.getLogger("medverify")
+_app_start_time = time.time()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run startup tasks before the app begins serving requests."""
-    ensure_indexes()
+    logger.info("Initializing MedVerify backend service...")
+    db_ok = ensure_indexes()
+    if db_ok:
+        logger.info("Database indexes successfully verified.")
+    else:
+        logger.warning(
+            "MongoDB unavailable during startup. MedVerify starting in degraded mode; will reconnect automatically."
+        )
     yield
+    logger.info("Shutting down MedVerify backend service...")
+    close_client()
 
 
 app = FastAPI(
@@ -70,11 +86,56 @@ app.include_router(image_verification.router)
 
 
 # ---------------------------------------------------------------------------
-# Health check
+# Health & Readiness checks
 # ---------------------------------------------------------------------------
 
 @app.get("/health", tags=["Health"])
 @app.get("/api/health", tags=["Health"])
 def health():
-    return {"status": "ok", "service": "medverify-api", "version": "1.0.0"}
+    """General health status."""
+    db_ok, _, _ = check_database_health()
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "service": "medverify-api",
+        "version": "1.0.0",
+        "database": "connected" if db_ok else "disconnected",
+    }
+
+
+@app.get("/health/live", tags=["Health"])
+@app.get("/api/health/live", tags=["Health"])
+def health_live():
+    """Liveness probe: verifies process is alive and receiving HTTP traffic."""
+    uptime = round(time.time() - _app_start_time, 2)
+    return {
+        "status": "alive",
+        "service": "medverify-api",
+        "version": "1.0.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "uptime_seconds": uptime,
+    }
+
+
+@app.get("/health/ready", tags=["Health"])
+@app.get("/api/health/ready", tags=["Health"])
+def health_ready():
+    """Readiness probe: verifies database connectivity and readiness to serve traffic."""
+    db_ok, db_detail, latency_ms = check_database_health()
+    uptime = round(time.time() - _app_start_time, 2)
+    payload = {
+        "status": "ready" if db_ok else "unready",
+        "service": "medverify-api",
+        "version": "1.0.0",
+        "database": {
+            "status": "connected" if db_ok else "disconnected",
+            "name": db_detail if db_ok else settings.database_name,
+            "error": None if db_ok else db_detail,
+            "latency_ms": latency_ms,
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "uptime_seconds": uptime,
+    }
+    if not db_ok:
+        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=payload)
+    return payload
 

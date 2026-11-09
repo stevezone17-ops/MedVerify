@@ -19,8 +19,30 @@ def test_health_check():
         response = client.get(path)
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "ok"
+        assert data["status"] in ("ok", "degraded")
         assert "version" in data
+        assert "database" in data
+
+
+def test_health_live():
+    for path in ("/health/live", "/api/health/live"):
+        response = client.get(path)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "alive"
+        assert "uptime_seconds" in data
+        assert "timestamp" in data
+
+
+def test_health_ready():
+    for path in ("/health/ready", "/api/health/ready"):
+        response = client.get(path)
+        # In test environment, returns 200 if MongoDB is up, or 503 with structured payload if down
+        assert response.status_code in (200, 503)
+        data = response.json()
+        assert data["status"] in ("ready", "unready")
+        assert "database" in data
+        assert "status" in data["database"]
 
 
 def test_verification_service_endpoint():
