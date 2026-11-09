@@ -31,48 +31,228 @@ import {
 export { API_BASE_URL, buildEndpointUrl, API_ENDPOINTS, validateApiConfig };
 
 // ---------------------------------------------------------------------------
-// Base fetch wrapper
+// Error Classification & Typed API Error
 // ---------------------------------------------------------------------------
 
-async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+export type ApiErrorCode =
+  | 'NETWORK_ERROR'
+  | 'TIMEOUT'
+  | 'DATABASE_UNAVAILABLE'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'SERVER_ERROR'
+  | 'UNKNOWN';
+
+export class MedVerifyApiError extends Error {
+  code: ApiErrorCode;
+  status?: number;
+  url: string;
+  data?: any;
+  isNetworkError: boolean;
+
+  constructor(
+    message: string,
+    code: ApiErrorCode,
+    options: { status?: number; url: string; data?: any; isNetworkError?: boolean }
+  ) {
+    super(message);
+    this.name = 'MedVerifyApiError';
+    this.code = code;
+    this.status = options.status;
+    this.url = options.url;
+    this.data = options.data;
+    this.isNetworkError = !!options.isNetworkError;
+    Object.setPrototypeOf(this, MedVerifyApiError.prototype);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Base fetch wrapper with bounded retry for idempotent operations
+// ---------------------------------------------------------------------------
+
+interface FetchOptions extends RequestInit {
+  timeoutMs?: number;
+  retries?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 15000;
+const MAX_IDEMPOTENT_RETRIES = 2;
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const token = localStorage.getItem('medverify_token');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...((init.headers as Record<string, string>) || {}),
+    ...((options.headers as Record<string, string>) || {}),
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const url = buildEndpointUrl(path);
+  const method = (options.method || 'GET').toUpperCase();
+  const isIdempotent = method === 'GET' || method === 'HEAD';
+  const maxRetries = isIdempotent ? (options.retries ?? MAX_IDEMPOTENT_RETRIES) : 0;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-  let res: Response;
+  let attempt = 0;
+  while (true) {
+    const controller = new AbortController();
+    const timeoutTimer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(url, {
+        ...options,
+        headers,
+        signal: options.signal || controller.signal,
+      });
+      clearTimeout(timeoutTimer);
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const rawDetail = body.detail || body.error?.message || `HTTP ${res.status}`;
+        const errorDetail = typeof rawDetail === 'string' ? rawDetail : JSON.stringify(rawDetail);
+
+        let code: ApiErrorCode = 'UNKNOWN';
+        if (res.status === 401) code = 'UNAUTHORIZED';
+        else if (res.status === 403) code = 'FORBIDDEN';
+        else if (res.status === 404) code = 'NOT_FOUND';
+        else if (res.status === 503) code = 'DATABASE_UNAVAILABLE';
+        else if (res.status >= 500) code = 'SERVER_ERROR';
+
+        // Retry idempotent requests on transient 502/503/504 if attempts remain
+        if (isIdempotent && attempt < maxRetries && (res.status === 502 || res.status === 503 || res.status === 504)) {
+          attempt++;
+          const backoff = attempt * 400;
+          console.warn(`[MedVerify API Client] Retrying ${method} ${url} in ${backoff}ms (attempt ${attempt}/${maxRetries})...`);
+          await sleep(backoff);
+          continue;
+        }
+
+        console.error('[MedVerify API Client] HTTP Error:', {
+          url,
+          status: res.status,
+          statusText: res.statusText,
+          code,
+          detail: errorDetail,
+        });
+
+        throw new MedVerifyApiError(errorDetail, code, {
+          status: res.status,
+          url,
+          data: body,
+          isNetworkError: false,
+        });
+      }
+
+      return (await res.json()) as T;
+    } catch (err: any) {
+      clearTimeout(timeoutTimer);
+
+      // If already a MedVerifyApiError thrown above, rethrow
+      if (err instanceof MedVerifyApiError) {
+        throw err;
+      }
+
+      const isAbort = err.name === 'AbortError';
+      const isNet =
+        isAbort ||
+        err.name === 'TypeError' ||
+        err.message?.includes('Failed to fetch') ||
+        err.message?.includes('NetworkError');
+
+      if (isIdempotent && attempt < maxRetries && isNet) {
+        attempt++;
+        const backoff = attempt * 400;
+        console.warn(`[MedVerify API Client] Retrying ${method} ${url} after network interruption in ${backoff}ms...`);
+        await sleep(backoff);
+        continue;
+      }
+
+      console.error('[MedVerify API Client] Network or Fetch Error:', { url, method, error: err });
+      const code: ApiErrorCode = isAbort ? 'TIMEOUT' : 'NETWORK_ERROR';
+      const message = isAbort
+        ? 'Request to MedVerify API timed out. Please check backend connection.'
+        : err?.message || 'Failed to connect to MedVerify API.';
+
+      throw new MedVerifyApiError(message, code, {
+        url,
+        isNetworkError: true,
+      });
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Health and Readiness Helpers
+// ---------------------------------------------------------------------------
+
+export interface BackendHealthStatus {
+  isAlive: boolean;
+  isReady: boolean;
+  databaseStatus: 'connected' | 'disconnected' | 'unknown';
+  service: string;
+  version?: string;
+  latencyMs?: number;
+  uptimeSeconds?: number;
+  error?: string;
+}
+
+export async function checkBackendHealth(): Promise<BackendHealthStatus> {
+  const liveUrl = buildEndpointUrl('/health/live');
   try {
-    res = await fetch(url, { ...init, headers });
-  } catch (netErr: any) {
-    console.error('[MedVerify API Client] Network connection failed:', { url, error: netErr });
-    const err = new Error(netErr?.message || 'Failed to fetch');
-    (err as any).isNetworkError = true;
-    (err as any).url = url;
-    throw err;
-  }
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const errorDetail = body.detail || body.error?.message || `HTTP ${res.status}`;
-    console.error('[MedVerify API Client] HTTP Error:', {
-      url,
-      status: res.status,
-      statusText: res.statusText,
-      detail: errorDetail,
-      body,
+    const liveRes = await fetch(liveUrl, {
+      headers: { Accept: 'application/json' },
     });
-    const err = new Error(typeof errorDetail === 'string' ? errorDetail : JSON.stringify(errorDetail));
-    (err as any).status = res.status;
-    (err as any).data = body;
-    (err as any).url = url;
-    throw err;
-  }
+    if (!liveRes.ok) {
+      return {
+        isAlive: false,
+        isReady: false,
+        databaseStatus: 'unknown',
+        service: 'medverify-api',
+        error: `Liveness returned HTTP ${liveRes.status}`,
+      };
+    }
+    const liveData = await liveRes.json().catch(() => ({}));
+    if (liveData.status !== 'alive') {
+      return {
+        isAlive: false,
+        isReady: false,
+        databaseStatus: 'unknown',
+        service: 'medverify-api',
+        error: 'Unexpected liveness payload',
+      };
+    }
 
-  return res.json() as Promise<T>;
+    // Backend is alive; now probe readiness
+    const readyUrl = buildEndpointUrl('/health/ready');
+    const readyRes = await fetch(readyUrl, {
+      headers: { Accept: 'application/json' },
+    });
+    const readyData = await readyRes.json().catch(() => ({}));
+    const isReady = readyRes.status === 200 && readyData.status === 'ready';
+
+    return {
+      isAlive: true,
+      isReady,
+      databaseStatus: readyData.database?.status || (isReady ? 'connected' : 'disconnected'),
+      service: readyData.service || 'medverify-api',
+      version: readyData.version || liveData.version || '1.0.0',
+      latencyMs: readyData.database?.latency_ms,
+      uptimeSeconds: liveData.uptime_seconds,
+      error: isReady ? undefined : readyData.database?.error || 'Database service disconnected',
+    };
+  } catch (err: any) {
+    return {
+      isAlive: false,
+      isReady: false,
+      databaseStatus: 'unknown',
+      service: 'medverify-api',
+      error: err?.message || 'Connection refused',
+    };
+  }
 }
 
 export async function checkHealth(): Promise<{ status: string; version?: string }> {
