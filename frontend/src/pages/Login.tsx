@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from '../router';
 import {
   Shield,
@@ -14,8 +14,17 @@ import {
   Lock,
   Sparkles,
   Check,
+  RefreshCw,
+  Activity,
 } from 'lucide-react';
-import { login, register, getStoredUser } from '../api/client';
+import {
+  login,
+  register,
+  getStoredUser,
+  checkBackendHealth,
+  type BackendHealthStatus,
+  MedVerifyApiError,
+} from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import type { User } from '../types';
 import { motion, AnimatePresence, useReducedMotion, type Variants } from 'framer-motion';
@@ -27,11 +36,62 @@ import { motion, AnimatePresence, useReducedMotion, type Variants } from 'framer
 interface NormalizedError {
   title: string;
   message: string;
+  isRetryable?: boolean;
 }
 
 function normalizeError(err: unknown): NormalizedError {
   // Always log technical error to console for development inspection
   console.error('[MedVerify Auth Debug]', err);
+
+  if (err instanceof MedVerifyApiError) {
+    if (err.code === 'NETWORK_ERROR' || err.isNetworkError) {
+      return {
+        title: 'AUTHENTICATION SERVICE UNAVAILABLE',
+        message: 'The MedVerify API server is currently unreachable. Please check that the backend server is running on port 8001.',
+        isRetryable: true,
+      };
+    }
+    if (err.code === 'DATABASE_UNAVAILABLE' || err.status === 503) {
+      return {
+        title: 'DATABASE TEMPORARILY DEGRADED',
+        message: 'The API server is running, but the database connection is currently unavailable or initializing. Please retry in a moment.',
+        isRetryable: true,
+      };
+    }
+    if (err.code === 'TIMEOUT') {
+      return {
+        title: 'REQUEST TIMED OUT',
+        message: 'The request to the MedVerify API timed out. Please check that port 8001 is responsive.',
+        isRetryable: true,
+      };
+    }
+    if (err.code === 'UNAUTHORIZED' || err.status === 401) {
+      return {
+        title: 'AUTHENTICATION FAILED',
+        message: 'Invalid email or password.',
+      };
+    }
+    if (err.code === 'FORBIDDEN' || err.status === 403) {
+      return {
+        title: 'ACCOUNT DISABLED',
+        message: 'This account has been disabled or suspended. Please contact your system administrator.',
+      };
+    }
+    if (err.code === 'NOT_FOUND' || err.status === 404) {
+      return {
+        title: 'SERVICE UNAVAILABLE',
+        message: 'Authentication service endpoint (/api/auth/login) not found on backend server.',
+        isRetryable: true,
+      };
+    }
+    if (err.code === 'SERVER_ERROR' || (err.status && err.status >= 500)) {
+      return {
+        title: 'AUTHENTICATION ERROR',
+        message: err.message || 'The authentication service returned an unexpected response.',
+        isRetryable: true,
+      };
+    }
+  }
 
   if (err instanceof Error) {
     const isNet =
@@ -45,6 +105,7 @@ function normalizeError(err: unknown): NormalizedError {
       return {
         title: 'AUTHENTICATION SERVICE UNAVAILABLE',
         message: 'The MedVerify API server is currently unreachable. Please check that the backend server is running on port 8001.',
+        isRetryable: true,
       };
     }
 
@@ -68,11 +129,20 @@ function normalizeError(err: unknown): NormalizedError {
       };
     }
 
+    // 403 forbidden or disabled
+    if (status === 403 || msgLower.includes('403') || msgLower.includes('disabled')) {
+      return {
+        title: 'ACCOUNT DISABLED',
+        message: 'This account has been disabled or suspended. Please contact your system administrator.',
+      };
+    }
+
     // 404 on endpoint
     if (status === 404) {
       return {
         title: 'SERVICE UNAVAILABLE',
         message: 'Authentication service endpoint (/api/auth/login) not found on backend server.',
+        isRetryable: true,
       };
     }
 
@@ -97,6 +167,7 @@ function normalizeError(err: unknown): NormalizedError {
       return {
         title: 'AUTHENTICATION ERROR',
         message: 'The authentication service returned an unexpected response.',
+        isRetryable: true,
       };
     }
 
@@ -129,9 +200,32 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorState, setErrorState] = useState<NormalizedError | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [healthStatus, setHealthStatus] = useState<BackendHealthStatus | null>(null);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
 
   const isLoading = status === 'loading';
   const isSuccess = status === 'success';
+
+  const runHealthCheck = async () => {
+    setIsCheckingHealth(true);
+    try {
+      const h = await checkBackendHealth();
+      setHealthStatus(h);
+      if (h.isAlive && h.isReady && errorState?.isRetryable) {
+        setErrorState(null);
+        if (status === 'error') setStatus('idle');
+      }
+      return h;
+    } catch {
+      return null;
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
+
+  useEffect(() => {
+    runHealthCheck();
+  }, []);
 
   // Role routing & redirect parameter handling
   const navigateByRole = (overrideUser?: User | null) => {
@@ -527,6 +621,42 @@ export default function Login() {
             </p>
           </motion.div>
 
+          {/* Backend Connection Health Status Indicator */}
+          <div className="backend-status-row">
+            <div
+              className={`backend-status-pill ${
+                !healthStatus
+                  ? 'status-loading'
+                  : healthStatus.isAlive && healthStatus.isReady
+                  ? 'status-online'
+                  : healthStatus.isAlive
+                  ? 'status-degraded'
+                  : 'status-offline'
+              }`}
+            >
+              <span className="status-dot" />
+              <span className="status-text">
+                {!healthStatus
+                  ? 'Checking MedVerify API connection...'
+                  : healthStatus.isAlive && healthStatus.isReady
+                  ? 'API Server Online (Port 8001)'
+                  : healthStatus.isAlive
+                  ? 'API Online · Database Reconnecting'
+                  : 'API Server Offline (Port 8001)'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => runHealthCheck()}
+              disabled={isCheckingHealth}
+              className="status-refresh-btn"
+              title="Refresh connection status"
+            >
+              <RefreshCw size={11} className={isCheckingHealth ? 'animate-spin' : ''} />
+              <span>{isCheckingHealth ? 'Checking...' : 'Check'}</span>
+            </button>
+          </div>
+
           {/* Form & Error Area (1.00s) */}
           <motion.form
             ref={formRef}
@@ -555,6 +685,25 @@ export default function Login() {
                   <div className="error-copy">
                     <strong className="error-title">{errorState.title}</strong>
                     <p className="error-message">{errorState.message}</p>
+                    {errorState.isRetryable && (
+                      <div className="error-action-row">
+                        <button
+                          type="button"
+                          className="error-retry-btn"
+                          onClick={async () => {
+                            const h = await runHealthCheck();
+                            if (h?.isAlive && h?.isReady) {
+                              setErrorState(null);
+                              setStatus('idle');
+                            }
+                          }}
+                          disabled={isCheckingHealth}
+                        >
+                          <RefreshCw size={11} className={isCheckingHealth ? 'animate-spin' : ''} />
+                          <span>Retry Connection</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -1447,6 +1596,93 @@ export default function Login() {
           color: #334155;
         }
 
+        /* Backend Connection Health Indicator */
+        .backend-status-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 16px;
+          padding: 8px 12px;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          font-size: 11px;
+        }
+
+        .backend-status-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-weight: 600;
+        }
+
+        .status-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+        }
+
+        .status-online .status-dot {
+          background-color: #10b981;
+          box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+        }
+
+        .status-online .status-text {
+          color: #065f46;
+        }
+
+        .status-degraded .status-dot {
+          background-color: #f59e0b;
+          box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+        }
+
+        .status-degraded .status-text {
+          color: #92400e;
+        }
+
+        .status-offline .status-dot {
+          background-color: #ef4444;
+          box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+        }
+
+        .status-offline .status-text {
+          color: #991b1b;
+        }
+
+        .status-loading .status-dot {
+          background-color: #94a3b8;
+        }
+
+        .status-loading .status-text {
+          color: #64748b;
+        }
+
+        .status-refresh-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          border-radius: 6px;
+          padding: 3px 8px;
+          font-size: 10px;
+          font-weight: 600;
+          color: #475569;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .status-refresh-btn:hover:not(:disabled) {
+          background: #f1f5f9;
+          color: #0f172a;
+          border-color: #94a3b8;
+        }
+
+        .status-refresh-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
         /* Error alert banner */
         .auth-error-banner {
           display: flex;
@@ -1470,6 +1706,7 @@ export default function Login() {
           display: flex;
           flex-direction: column;
           gap: 2px;
+          flex: 1;
         }
 
         .error-title {
@@ -1484,6 +1721,34 @@ export default function Login() {
           line-height: 1.45;
           margin: 0;
           color: #b91c1c;
+        }
+
+        .error-action-row {
+          margin-top: 8px;
+        }
+
+        .error-retry-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          background: #ffffff;
+          border: 1px solid #fca5a5;
+          border-radius: 6px;
+          padding: 4px 10px;
+          font-size: 11px;
+          font-weight: 700;
+          color: #b91c1c;
+          cursor: pointer;
+          transition: background 0.15s ease;
+        }
+
+        .error-retry-btn:hover:not(:disabled) {
+          background: #fee2e2;
+        }
+
+        .error-retry-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
 
         /* Submit Button */
