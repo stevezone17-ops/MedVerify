@@ -5,9 +5,10 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pymongo.errors import PyMongoError
 
 from app.config import settings
 from app.database import ensure_indexes, check_database_health, close_client
@@ -66,6 +67,20 @@ async def add_security_headers(request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
+
+
+@app.exception_handler(PyMongoError)
+async def pymongo_exception_handler(request: Request, exc: PyMongoError):
+    """Gracefully handle transient MongoDB connection drops with 503 instead of 500."""
+    logger.error("Database connection exception during request to %s: %s", request.url.path, exc)
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "status": "error",
+            "error": "database_unavailable",
+            "detail": "MedVerify database service is temporarily unavailable. Please retry in a moment.",
+        },
+    )
 
 # ---------------------------------------------------------------------------
 # Routers

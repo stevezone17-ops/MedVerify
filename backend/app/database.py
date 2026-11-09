@@ -23,12 +23,13 @@ def get_client() -> MongoClient:
             serverSelectionTimeoutMS=2000,
             connectTimeoutMS=2000,
             socketTimeoutMS=5000,
+            retryWrites=True,
         )
     return _client
 
 
 def close_client() -> None:
-    """Safely terminate client connections during shutdown or reset."""
+    """Safely terminate client connections during shutdown, reset, or reconnect."""
     global _client, _db
     if _client is not None:
         try:
@@ -59,6 +60,8 @@ def check_database_health() -> tuple[bool, str, float]:
         return True, settings.database_name, latency_ms
     except Exception as exc:
         latency_ms = round((time.perf_counter() - start) * 1000, 2)
+        # Reset client on connection error so subsequent requests get a fresh pool
+        close_client()
         return False, str(exc), latency_ms
 
 
