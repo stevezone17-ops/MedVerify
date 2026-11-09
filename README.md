@@ -15,6 +15,31 @@ MedVerify is a production-grade pharmaceutical verification platform designed to
 
 ---
 
+## Development Quick Start
+
+MedVerify features a unified, zero-conflict development launcher:
+
+```powershell
+# Start backend and frontend with automated readiness verification
+.\start-dev.ps1
+
+# Stop all background development processes and free ports
+.\stop-dev.ps1
+```
+
+- **Frontend Application**: `http://localhost:5173`
+- **Backend API Server**: `http://127.0.0.1:8001`
+- **Interactive API Docs**: `http://127.0.0.1:8001/docs`
+- **System Readiness Probe**: `http://127.0.0.1:8001/health/ready`
+- **System Liveness Probe**: `http://127.0.0.1:8001/health/live`
+
+Detailed infrastructure documentation:
+- [`LOCAL_DEVELOPMENT_SETUP.md`](LOCAL_DEVELOPMENT_SETUP.md) — Prerequisites, configuration, demo accounts, and troubleshooting.
+- [`SERVICE_HEALTH_AND_RECOVERY.md`](SERVICE_HEALTH_AND_RECOVERY.md) — Liveness/readiness architecture, auto-reconnection, and failure recovery.
+- [`BACKEND_CONNECTIVITY_AUDIT.md`](BACKEND_CONNECTIVITY_AUDIT.md) — Comprehensive 12-point connectivity and root-cause audit.
+
+---
+
 ## Core Verification Pipeline
 
 ```
