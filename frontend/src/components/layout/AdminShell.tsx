@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from '../../router';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -121,8 +121,28 @@ export const AdminShell: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const mainWrapRef = useRef<HTMLDivElement>(null);
 
   const user = authUser || storedUser;
+
+  // Scroll to top on admin route changes
+  useEffect(() => {
+    if (mainWrapRef.current) {
+      mainWrapRef.current.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }
+  }, [location.pathname]);
+
+  // Lock scrolling on main wrap while mobile sidebar drawer is open
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const wrap = mainWrapRef.current;
+    if (!wrap) return;
+    const prevOverflow = wrap.style.overflowY;
+    wrap.style.overflowY = 'hidden';
+    return () => {
+      wrap.style.overflowY = prevOverflow || '';
+    };
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     setStoredUser(getStoredUser());
@@ -280,7 +300,7 @@ export const AdminShell: React.FC = () => {
       )}
 
       {/* Main Content Viewport */}
-      <div className="admin-shell-main-wrap">
+      <div className="admin-shell-main-wrap" ref={mainWrapRef} tabIndex={-1}>
         {/* Top Operational Header */}
         <header className="admin-shell-topbar">
           <div className="admin-shell-topbar-left">

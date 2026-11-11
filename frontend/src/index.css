@@ -7515,7 +7515,9 @@ button {
 .admin-shell-root {
   display: flex;
   height: 100vh;
-  width: 100vw;
+  height: 100dvh;
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
   background-color: var(--admin-bg, #f8fafc);
   color: var(--admin-text-primary, #0f172a);
@@ -7530,8 +7532,41 @@ button {
   flex-direction: column;
   flex-shrink: 0;
   height: 100vh;
+  height: 100dvh;
   position: relative;
   z-index: 40;
+}
+
+.admin-shell-main-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-top: 60px;
+  outline: none;
+}
+
+.admin-shell-main-wrap::-webkit-scrollbar {
+  width: 8px;
+}
+
+.admin-shell-main-wrap::-webkit-scrollbar-track {
+  background: var(--admin-bg, #f8fafc);
+}
+
+.admin-shell-main-wrap::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.admin-shell-main-wrap::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .admin-shell-sidebar-header {
@@ -7914,6 +7949,9 @@ button {
   margin: 0 auto;
   background-color: var(--admin-bg, #f8fafc);
   flex: 1;
+  min-height: min-content;
+  display: flex;
+  flex-direction: column;
 }
 
 @media (max-width: 1024px) {
@@ -7929,6 +7967,8 @@ button {
     left: 0;
     bottom: 0;
     width: 280px;
+    height: 100%;
+    height: 100dvh;
     transform: translateX(-100%);
     transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15);

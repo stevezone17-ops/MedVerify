@@ -66,15 +66,23 @@ export const InspectionDrawer: React.FC<InspectionDrawerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Lock body scroll when open
+  // Lock body and admin viewport scrolling when open; cleanly restore on close
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+    if (!isOpen) return;
+    const adminMain = document.querySelector('.admin-shell-main-wrap') as HTMLElement | null;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevAdminOverflow = adminMain?.style.overflowY;
+
+    document.body.style.overflow = 'hidden';
+    if (adminMain) {
+      adminMain.style.overflowY = 'hidden';
     }
+
     return () => {
-      document.body.style.overflow = '';
+      document.body.style.overflow = prevBodyOverflow || '';
+      if (adminMain) {
+        adminMain.style.overflowY = prevAdminOverflow || '';
+      }
     };
   }, [isOpen]);
 
