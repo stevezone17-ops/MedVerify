@@ -27,15 +27,16 @@ MedVerify provides a unified launcher that eliminates desynchronization, port co
 From the project root directory, run:
 
 ```powershell
-.\start-dev.ps1
+.\start-medverify.ps1
 ```
+*(Alternatively, `.\start-dev.ps1` is available as a backwards-compatible alias.)*
 
 The script performs the following automated steps:
 1. **Prerequisite Discovery:** Verifies Python in `backend/.venv`, Node.js, and npm.
-2. **Port Conflict Check:** Inspects ports `8001` (backend) and `5173` (frontend).
+2. **Port Conflict Check:** Inspects ports `8001` (backend) and `5173` (frontend) and verifies that running listeners belong to MedVerify to avoid duplicate instances.
 3. **Backend Service Launch:** Boots FastAPI via Uvicorn on `http://127.0.0.1:8001`.
 4. **Liveness Polling:** Probes `http://127.0.0.1:8001/health/live` until the server responds.
-5. **Readiness & Database Check:** Evaluates `http://127.0.0.1:8001/health/ready` to verify MongoDB connectivity.
+5. **Readiness & Database Check:** Evaluates `http://127.0.0.1:8001/health/ready` to verify MongoDB connectivity and latency.
 6. **Frontend Service Launch:** Starts Vite dev server on `http://localhost:5173`.
 7. **Diagnostics Dashboard:** Outputs the live endpoints and access URLs.
 
@@ -44,8 +45,9 @@ The script performs the following automated steps:
 To cleanly stop all background MedVerify processes and free ports 8001 and 5173:
 
 ```powershell
-.\stop-dev.ps1
+.\stop-medverify.ps1
 ```
+*(Alternatively, `.\stop-dev.ps1` is also supported.)*
 
 ---
 

@@ -1,7 +1,7 @@
-# MedVerify V1.0 — Security & Privacy Audit Report
+# MedVerify v1.0 — Security & Privacy Audit Report
 
-**Audit Date:** November 6, 2026  
-**Classification:** Confidential / Production Security Baseline  
+**Audit Date:** November 12, 2026  
+**Classification:** Production Security Baseline  
 **Auditor:** MedVerify Platform Security & Integrity Engineering  
 
 ---
@@ -28,7 +28,7 @@ MedVerify operates in a high-stakes healthcare environment where counterfeit med
 
 ### 2.2 Token Management & Session Lifecycles
 - **Cryptographic Signature:** JWTs are signed using HMAC-SHA256 (`HS256`) against a secure 256-bit server secret.
-- **Strict Expiration:** Tokens carry explicit `exp` claims (configurable via `JWT_EXPIRY_MINUTES`, defaulting to 1,440 minutes / 24 hours).
+- **Strict Expiration:** Tokens carry explicit `exp` claims (configurable via `JWT_EXPIRY_MINUTES`, defaulting to 60 minutes in production).
 - **Dual Engine Decoding:** `decode_token` validates against local secrets first, with automated failover to Supabase Auth token verification when configured.
 - **Disabled Account Protection:** Even with a valid cryptographic JWT signature, `get_current_user` verifies the user's database status; accounts marked `status: "disabled"` are immediately rejected with HTTP 403 Forbidden.
 
@@ -61,9 +61,10 @@ All administrative endpoints under `/api/admin/*` and `/api/admin/ai/*` enforce 
 
 ### 3.2 Insecure Direct Object Reference (IDOR) Prevention
 - **Personal Activity History:** `/api/user/history` filters verification queries strictly by `user_id = str(current_user["_id"])`.
-- **Medicine Cabinet:** All cabinet operations (`/api/user/cabinet`) enforce ownership matching on both `id` and `user_id`. A user cannot view, update, or delete another user's cabinet entries.
+- **Medicine Cabinet:** All cabinet operations (`/api/user/cabinet`) enforce ownership matching on both `id` and `user_id`. Updating (`PATCH /api/user/cabinet/{id}`) or deleting (`DELETE /api/user/cabinet/{id}`) another user's entry returns `404 Not Found` or `removed: false`. Verified in `test_cabinet_entry_idor_protection`.
+- **Single Verification Lookup:** In `/api/verifications/{verification_id}`, non-owner requests are rejected with `HTTP 403 Forbidden`. Verified in `test_verification_idor_access_control`.
 - **Uploaded Packaging Images:** In `/api/image-verification/image/{image_id}`, non-admin requesters can only download images whose metadata matches their authenticated `user_id`. Cross-user attempts return `HTTP 403 Forbidden`.
-- **Image Analysis Batches:** In `/api/image-verification/analysis/{analysis_id}`, requests are scoped strictly to the batch creator, verified in `test_stage8_end_to_end_verification_flow_and_security_invariants`.
+- **Image Analysis Batches:** In `/api/image-verification/analyze/{batch_id}`, requests are scoped strictly to the batch creator.
 
 ---
 
@@ -98,7 +99,7 @@ Packaging images uploaded via `/api/image-verification/upload` undergo strict fo
 
 ## 5. Defensive HTTP Security Headers
 
-In Stage 3, global HTTP security middleware was integrated into FastAPI (`backend/app/main.py`), applying the following defensive headers to all outbound responses:
+Global HTTP security middleware is integrated into FastAPI (`backend/app/main.py`), applying the following defensive headers to all outbound responses:
 
 | Security Header | Configured Value | Purpose |
 | :--- | :--- | :--- |
@@ -127,5 +128,5 @@ The Gemini conversational intelligence service was audited across adversarial an
 
 ## 8. Audit Trail & Forensic Logging
 
-- Every verification executed via `/api/verify` or `/api/image-verification/confirm-and-verify` automatically generates an immutable audit log entry in MongoDB (`audit_logs` collection) containing the timestamp, user ID, verification ID, confidence score, status, and input payload metadata.
+- Every verification executed via `/api/verify` or `/api/image-verification/confirm-and-verify` automatically generates an immutable audit log entry in MongoDB containing the timestamp, user ID, verification ID, confidence score, status, and input payload metadata.
 - Administrators can review forensic records in real time via `/api/admin/audit` with pagination and date filtering.

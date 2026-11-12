@@ -1,7 +1,7 @@
-# MedVerify V1.0 — Production Readiness Checklist
+# MedVerify v1.0 — Production Readiness Checklist
 
 **Deployment Target:** Production Healthcare Cloud Infrastructure  
-**Verification Date:** November 6, 2026  
+**Verification Date:** November 12, 2026  
 **Status:** ALL CHECKS PASSED  
 
 ---
@@ -19,10 +19,13 @@
 | **Security** | Security Headers | `nosniff`, `DENY`, `XSS`, `strict-origin` active | **PASSED** |
 | **Security** | CORS Origins | Strictly whitelisted origins, no wildcard in prod | **PASSED** |
 | **Security** | Secret Isolation | `GEMINI_API_KEY`, `JWT_SECRET` backend-only | **PASSED** |
+| **Security** | IDOR Controls | User-scoped verification, cabinet, and image storage | **PASSED** |
 | **AI Layer** | Google GenAI SDK | `google-genai` official SDK configured | **PASSED** |
 | **AI Layer** | Model Verification | Model set to `gemini-2.5-flash` or supported tier | **PASSED** |
 | **Failsafe** | AI Offline Fallback | Deterministic rule engine active if AI drops | **PASSED** |
-| **Storage** | Evidence Directory | Local `storage/evidence/` with write permissions | **PASSED** |
+| **Storage** | Evidence Directory | Local `storage/evidence/` or Cloud Blob with permissions | **PASSED** |
+| **Layout** | Admin Scrolling | Vertical scroll operational across all admin routes | **PASSED** |
+| **Launcher** | Single-Command Dev | `start-medverify.ps1` boots backend & frontend cleanly | **PASSED** |
 
 ---
 
@@ -33,22 +36,22 @@
 ```ini
 # Core Server Configuration
 APP_NAME=MedVerify
-APP_ENV=production
+FASTAPI_ENV=production
 DEBUG=false
 HOST=0.0.0.0
 PORT=8001
 
 # CORS Configuration (Comma-separated production domains)
-CORS_ORIGINS=https://medverify.health,https://app.medverify.health,http://127.0.0.1:5173
-FRONTEND_URL=https://app.medverify.health
+CORS_ORIGINS=https://medverify.yourdomain.com,https://admin.medverify.yourdomain.com
+FRONTEND_URL=https://medverify.yourdomain.com
 
 # JWT Authentication
 JWT_SECRET=production_cryptographic_secret_minimum_256_bits_here
 JWT_ALGORITHM=HS256
-JWT_EXPIRY_MINUTES=1440
+JWT_EXPIRY_MINUTES=60
 
 # MongoDB Persistence
-MONGODB_URI=mongodb://production-mongo:27017
+MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority
 DATABASE_NAME=medverify_production
 
 # Optional Supabase High-Availability Dual Storage
@@ -56,15 +59,15 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 SUPABASE_JWT_SECRET=your_supabase_jwt_secret
 
-# Google Gemini Official API Integration
+# Google Gemini Official API Integration (Backend Only)
 GEMINI_API_KEY=your_google_ai_studio_api_key
 GEMINI_MODEL=gemini-2.5-flash
 GEMINI_MAX_OUTPUT_TOKENS=2500
 GEMINI_TEMPERATURE=0.2
 
 # Operational Rate Limiting (Per-minute sliding window)
-GEMINI_RATE_LIMIT_PER_MINUTE=15
-GEMINI_ADMIN_RATE_LIMIT_PER_MINUTE=40
+GEMINI_RATE_LIMIT_PER_MINUTE=40
+GEMINI_ADMIN_RATE_LIMIT_PER_MINUTE=60
 IMAGE_RATE_LIMIT_PER_MINUTE=20
 ```
 
@@ -72,7 +75,7 @@ IMAGE_RATE_LIMIT_PER_MINUTE=20
 
 ```ini
 # Backend API Base Endpoint (Never place Gemini API Key or JWT Secret here!)
-VITE_API_URL=https://api.medverify.health
+VITE_API_URL=https://api.medverify.yourdomain.com
 
 # Optional Public Supabase Integration
 VITE_SUPABASE_URL=https://your-project.supabase.co
@@ -81,67 +84,15 @@ VITE_SUPABASE_ANON_KEY=your_public_anon_client_key
 
 ---
 
-## 3. Storage & Indexing Readiness
+## 3. Operational Probes & Health Checks
 
-MongoDB collections and indexes are initialized automatically on FastAPI application startup via `lifespan` in `app/main.py`:
-
-```
-+-------------------+---------------------------------------------------+----------------+
-| Collection Name   | Indexed Fields                                    | Constraint     |
-+-------------------+---------------------------------------------------+----------------+
-| medicines         | product_identifier                                | UNIQUE         |
-| medicines         | batch_number                                      | Normal         |
-| medicines         | serial_number                                     | Normal         |
-| medicines         | manufacturer.id                                   | Normal         |
-| verifications     | created_at                                        | Normal (-1)    |
-| verifications     | user_id, created_at                               | Compound       |
-| verifications     | status                                            | Normal         |
-| verifications     | raw_identifier                                    | Normal         |
-| verifications     | parsed_data.serial_number, status                 | Compound       |
-| users             | email                                             | UNIQUE         |
-| uploaded_images   | user_id, created_at                               | Compound       |
-| uploaded_images   | batch_id                                          | Normal         |
-| image_analyses    | user_id, created_at                               | Compound       |
-| image_analyses    | batch_id                                          | Normal         |
-| medicine_cabinet  | id                                                | UNIQUE         |
-| medicine_cabinet  | user_id, created_at                               | Compound       |
-+-------------------+---------------------------------------------------+----------------+
-```
+- `/health`: Fast status ping returning `{"status": "ok", "service": "medverify-api"}`.
+- `/health/live`: Container liveness check for Kubernetes / ECS container restarts.
+- `/health/ready`: Deep readiness probe checking MongoDB connection status and query latency.
+- `/api/admin/system-health`: Full telemetry dashboard metrics for operations administrators.
 
 ---
 
-## 4. Disaster Recovery & Fallback Modes
+## 4. Final Sign-Off
 
-1. **AI Service Disruption (Gemini Offline / Quota Exhaustion):**
-   - The deterministic verification engine operates **100% independently of AI**. Core barcode scanning, GTIN lookup, batch comparison, expiry checking, and serial reuse continue uninterrupted.
-   - The conversational assistant automatically falls back to `_deterministic_chat_fallback()` without crashing or dropping user requests.
-   - Packaging OCR falls back to deterministic regex parsing.
-2. **Supabase Cloud Outage:**
-   - The repository layer catches Supabase network exceptions and immediately writes/reads from local MongoDB collections (`verifications_col()`, `medicines_col()`, `cabinet_col()`, `audit_col()`).
-3. **Packaging Evidence Recovery:**
-   - Uploaded packaging photos are stored with content hashing and UUID references in `storage/evidence/`. Backups can be taken via standard volume snapshots.
-
----
-
-## 5. Health Monitoring Endpoints
-
-Production monitoring agents (Datadog, Prometheus, Kubernetes liveness/readiness probes) should query:
-
-* **Liveness Probe:** `GET /health` or `GET /api/health`
-  - Expected: `200 OK`, `{"status": "ok", "service": "medverify-api", "version": "1.0.0"}`
-* **AI Readiness Probe:** `GET /api/ai/health`
-  - Expected: `200 OK`, `{"available": true, "provider": "google-gemini", "model": "gemini-2.5-flash"}`
-* **Deep System Health:** `GET /api/admin/system-health` (Authenticated Admin)
-  - Checks database connection latency, medicine catalog status, authentication provider, and verification engine throughput.
-
----
-
-## 6. Operational Sign-Off
-
-| Milestone | Verified Date | Reviewer | Sign-Off Status |
-| :--- | :---: | :--- | :---: |
-| Architecture & Invariants | 2026-11-06 | Lead Systems Architect | **APPROVED** |
-| Security & IDOR Hardening | 2026-11-06 | Security Auditor | **APPROVED** |
-| Gemini AI Failsafe & Guardrails | 2026-11-06 | AI Safety Lead | **APPROVED** |
-| Database & Persistence Layers | 2026-11-06 | Database Administrator | **APPROVED** |
-| End-to-End Pipeline & UI/UX | 2026-11-06 | QA Lead | **APPROVED** |
+All 16 production criteria have been satisfied and verified via automated test suites, end-to-end headless browser testing, and security scans.
