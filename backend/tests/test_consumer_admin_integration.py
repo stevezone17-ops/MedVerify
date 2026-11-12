@@ -162,3 +162,82 @@ def test_admin_medicine_registry_lifecycle_affects_consumer_verification(client,
     # Cleanup cabinet item & medicine
     client.delete(f"/api/user/cabinet/{cab_id}", headers=consumer_headers)
     medicines_col().delete_many({"product_identifier": new_gtin})
+
+
+def test_complete_e2e_photo_verification_to_admin_audit_journey(client, consumer_token, admin_token):
+    """Test full journey: Consumer Photo Upload -> AI Analysis -> Confirm & Verify -> Cabinet -> User History -> Admin Audit."""
+    import io
+    from PIL import Image
+
+    consumer_headers = {"Authorization": f"Bearer {consumer_token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # 1. Consumer uploads packaging photo
+    buf = io.BytesIO()
+    Image.new("RGB", (600, 450), color=(13, 148, 136)).save(buf, format="JPEG")
+    img_bytes = buf.getvalue()
+
+    upload_resp = client.post(
+        "/api/image-verification/upload",
+        files=[("files", ("pack_e2e.jpg", img_bytes, "image/jpeg"))],
+        data={"slots": ["front"]},
+        headers=consumer_headers,
+    )
+    assert upload_resp.status_code == 201
+    batch_id = upload_resp.json()["batch_id"]
+
+    # 2. Trigger AI analysis & OCR
+    analysis_resp = client.post(
+        f"/api/image-verification/analyze/{batch_id}",
+        headers=consumer_headers,
+    )
+    assert analysis_resp.status_code == 200
+    analysis_id = analysis_resp.json()["analysis_id"]
+
+    # 3. Confirm extracted parameters and run authoritative 6-factor engine
+    confirm_resp = client.post(
+        "/api/image-verification/confirm-and-verify",
+        json={
+            "analysis_id": analysis_id,
+            "batch_id": batch_id,
+            "confirmed_fields": {
+                "gtin": "89012345678901",
+                "batch_number": "BATCH-2026-001",
+                "expiry_date": "2028-01-09",
+                "serial_number": f"SN_E2E_{batch_id[:6]}",
+            },
+        },
+        headers=consumer_headers,
+    )
+    assert confirm_resp.status_code == 200
+    confirm_data = confirm_resp.json()
+    verif_id = confirm_data["verification_id"]
+    assert confirm_data["verification"]["status"] == "VERIFIED"
+
+    # 4. Save to medicine cabinet
+    cab_resp = client.post(
+        "/api/user/cabinet",
+        json={
+            "verification_id": verif_id,
+            "product_name": "Amoxicillin 500mg E2E",
+            "batch_number": "BATCH-2026-001",
+            "expiry_date": "2028-01-09",
+        },
+        headers=consumer_headers,
+    )
+    assert cab_resp.status_code in [200, 201]
+    cab_id = cab_resp.json()["id"]
+
+    # 5. Check consumer history
+    hist_resp = client.get("/api/user/history", headers=consumer_headers)
+    assert hist_resp.status_code == 200
+    assert any(it["verification_id"] == verif_id for it in hist_resp.json()["items"])
+
+    # 6. Admin inspects audit trail for the photo verification event
+    audit_resp = client.get("/api/admin/audit?limit=25", headers=admin_headers)
+    assert audit_resp.status_code == 200
+    assert any(it.get("verification_id") == verif_id for it in audit_resp.json()["items"])
+
+    # Cleanup cabinet entry
+    client.delete(f"/api/user/cabinet/{cab_id}", headers=consumer_headers)
+
