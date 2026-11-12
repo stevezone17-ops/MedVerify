@@ -172,3 +172,44 @@ def test_cabinet_crud_persistence_in_mongodb():
     # Verify deleted in MongoDB
     mongo_entry = cabinet_col().find_one({"user_id": test_user, "$or": [{"id": cab_id}, {"_id": cab_id}]})
     assert mongo_entry is None
+
+
+def test_verification_record_persistence_and_audit():
+    """Verify that verification events persist with user linkage, timestamps, and audit metrics."""
+    from datetime import datetime, timezone
+    test_verif_id = "vrf_persistence_test_999"
+    verifications_col().delete_many({"_id": test_verif_id})
+
+    record = {
+        "_id": test_verif_id,
+        "verification_id": test_verif_id,
+        "user_id": "usr_audit_persist_test",
+        "user_email": "auditor@medverify.demo",
+        "status": "VERIFIED",
+        "confidence_score": 95,
+        "product_name": "Azithromycin 250mg",
+        "parsed_data": {
+            "product_identifier": "08901148259999",
+            "batch_number": "BATCH-PERSIST-01",
+            "serial_number": "SN-PERSIST-01",
+        },
+        "method": "IMAGE_VERIFICATION",
+        "image_batch_id": "batch_img_persist_01",
+        "created_at": datetime.now(timezone.utc),
+    }
+    verifications_col().insert_one(record)
+
+    # Fetch via repository
+    fetched = verifications_repo.get_by_id(test_verif_id)
+    assert fetched is not None
+    assert fetched["status"] == "VERIFIED"
+    assert fetched["confidence_score"] == 95
+    assert fetched.get("image_batch_id") == "batch_img_persist_01"
+
+    # Verify audit listing picks it up
+    items, total = verifications_repo.list_history(limit=50)
+    assert any(it.get("verification_id") == test_verif_id for it in items)
+
+    # Clean up
+    verifications_col().delete_many({"_id": test_verif_id})
+
