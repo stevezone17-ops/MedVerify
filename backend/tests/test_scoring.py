@@ -81,3 +81,37 @@ def test_score_insufficient_fields():
     res = calculate_score(SAMPLE_REGISTRY, parsed, serial_seen_before=False)
     # Skipped fields should trigger REQUIRES_REVIEW due to insufficient verification data
     assert res.status == "REQUIRES_REVIEW"
+
+
+def test_score_unregistered_is_not_labelled_counterfeit():
+    """Unregistered medicines must be classified as NOT_FOUND, never automatically 'COUNTERFEIT'."""
+    res = calculate_score(None, {"product_identifier": "00000000000000"})
+    assert res.status == "NOT_FOUND"
+    assert res.status != "COUNTERFEIT"
+    assert res.score == 0
+    assert "not found in the configured registry" in res.issues[0].lower()
+
+
+def test_score_duplicate_serial_produces_suspicious_not_conclusive_counterfeit():
+    """Duplicate serial flag marks verification as SUSPICIOUS, not conclusive counterfeit."""
+    parsed = {
+        "product_identifier": "89012345678901",
+        "batch_number": "BATCH-2026-001",
+        "serial_number": "SER-PC-000001",
+    }
+    res = calculate_score(SAMPLE_REGISTRY, parsed, serial_seen_before=True)
+    assert res.status == "SUSPICIOUS"
+    assert res.status != "COUNTERFEIT"
+    assert any("reuse" in issue.lower() or "serial" in issue.lower() for issue in res.issues)
+
+
+def test_score_mismatched_manufacturer_triggers_critical_fail():
+    """Mismatched manufacturer triggers a critical failure and marks status as SUSPICIOUS."""
+    parsed = {
+        "product_identifier": "89012345678901",
+        "manufacturer": "Unlicensed Rogue Labs",
+        "batch_number": "BATCH-2026-001",
+    }
+    res = calculate_score(SAMPLE_REGISTRY, parsed, serial_seen_before=False)
+    assert res.status == "SUSPICIOUS"
+    assert any("manufacturer" in issue.lower() for issue in res.issues)
