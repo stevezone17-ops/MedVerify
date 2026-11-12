@@ -558,4 +558,27 @@ def test_q5_latest_scan_evidence_handling(client, user_token):
     assert any(term in ans_active for term in ["BATCH-2026-001", "89012345678901", "SER-PC-000001"])
 
 
+def test_gemini_timeout_and_quota_graceful_fallback(monkeypatch, client, user_token):
+    """Simulate API timeout or quota exhaustion and verify graceful fallback without 500 error."""
+    import app.services.llm.service as llm_service_module
+
+    def mock_gemini_failure(*args, **kwargs):
+        raise TimeoutError("Gemini API connection timed out (408 Request Timeout)")
+
+    monkeypatch.setattr(llm_service_module, "call_gemini_json", mock_gemini_failure)
+
+    headers = {"Authorization": f"Bearer {user_token}"}
+    resp = client.post(
+        "/api/ai/chat",
+        json={"question": "How do I check a batch number on my packaging?"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["answer"]) > 0
+    assert "safety_notice" in data
+    assert any(term in data["answer"].lower() for term in ["batch", "packaging", "gs1", "lot"])
+
+
+
 
