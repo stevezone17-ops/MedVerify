@@ -176,3 +176,43 @@ def test_security_headers_present():
     assert resp.headers.get("x-xss-protection") == "1; mode=block"
     assert resp.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
 
+
+def test_cabinet_entry_idor_protection(user_a_token, user_b_token):
+    """User B must NOT be able to modify or delete User A's cabinet entries."""
+    headers_a = {"Authorization": f"Bearer {user_a_token}"}
+    headers_b = {"Authorization": f"Bearer {user_b_token}"}
+
+    # User A adds an entry to their cabinet
+    add_resp = client.post(
+        "/api/user/cabinet",
+        json={
+            "product_name": "Private User A Medicine",
+            "batch_number": "SEC-BATCH-001",
+            "nickname": "Alpha Prescription",
+        },
+        headers=headers_a,
+    )
+    assert add_resp.status_code == 201
+    entry_id = add_resp.json()["id"]
+
+    # User B attempts to patch User A's cabinet entry -> Must return 404
+    patch_resp = client.patch(
+        f"/api/user/cabinet/{entry_id}",
+        json={"nickname": "Hacked by User B"},
+        headers=headers_b,
+    )
+    assert patch_resp.status_code == 404, f"IDOR vulnerability! User B modified User A's cabinet entry: {patch_resp.text}"
+
+    # User B attempts to delete User A's cabinet entry -> removed must be false
+    del_resp = client.delete(
+        f"/api/user/cabinet/{entry_id}",
+        headers=headers_b,
+    )
+    assert del_resp.status_code == 200
+    assert del_resp.json()["removed"] is False, "IDOR vulnerability! User B deleted User A's cabinet entry!"
+
+    # Clean up User A's entry
+    cleanup_resp = client.delete(f"/api/user/cabinet/{entry_id}", headers=headers_a)
+    assert cleanup_resp.status_code == 200
+    assert cleanup_resp.json()["removed"] is True
+
