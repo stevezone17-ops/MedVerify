@@ -6475,8 +6475,33 @@ button {
   }
   .user-shell-desktop-nav,
   .user-shell-user-btn,
+  .user-shell-user-pill,
+  .user-shell-admin-switch-btn,
   .user-shell-logout-btn {
     display: none;
+  }
+  .user-shell-trust-badge {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .user-shell-header-content {
+    padding: 0 16px;
+    height: 60px;
+    gap: 12px;
+  }
+  .user-shell-logo-subtitle {
+    display: none;
+  }
+  .user-shell-scan-btn span {
+    display: none;
+  }
+  .user-shell-scan-btn {
+    padding: 7px 10px !important;
+  }
+  .user-shell-main-content {
+    padding: 20px 16px 48px;
   }
 }
 
