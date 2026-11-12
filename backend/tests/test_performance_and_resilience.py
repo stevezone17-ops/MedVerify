@@ -135,3 +135,37 @@ def test_rate_limiter_sliding_window_resilience():
     limiter._history[user_key] = [t - 3.0 for t in limiter._history[user_key]]
     # Now call should pass again
     assert limiter.check_rate_limit(user_key) is True
+
+
+# ---------------------------------------------------------------------------
+# 5. Large Image Upload Performance & Resilience
+# ---------------------------------------------------------------------------
+
+def test_large_image_upload_and_processing_performance(client, user_token):
+    """High-resolution packaging images (1600x1200) upload and process within performance targets."""
+    import io
+    from PIL import Image
+
+    buf = io.BytesIO()
+    img = Image.new("RGB", (1600, 1200), color=(14, 116, 144))
+    img.save(buf, format="JPEG", quality=90)
+    large_bytes = buf.getvalue()
+
+    headers = {"Authorization": f"Bearer {user_token}"}
+    t0 = time.perf_counter()
+    resp = client.post(
+        "/api/image-verification/upload",
+        files=[("files", ("large_package.jpg", large_bytes, "image/jpeg"))],
+        data={"slots": ["front"]},
+        headers=headers,
+    )
+    t1 = time.perf_counter()
+
+    assert resp.status_code == 201
+    upload_time_ms = (t1 - t0) * 1000
+    # Upload and image validation must finish in under 2000ms
+    assert upload_time_ms < 2000.0, f"Large image upload took too long: {upload_time_ms:.2f}ms"
+    data = resp.json()
+    assert data["images"][0]["width"] == 1600
+    assert data["images"][0]["height"] == 1200
+
