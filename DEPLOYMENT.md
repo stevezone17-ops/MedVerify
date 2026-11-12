@@ -1,120 +1,163 @@
-# MedVerify — Production Deployment Guide
+# MedVerify v1.0 — Production Deployment Architecture & Guide
 
 ## 1. Production Architecture Overview
 
 ```text
-[ Client Devices (Mobile / Desktop) ]
-                 │ HTTPS
+[ Client Mobile & Desktop Browsers ]
+                 │
+                 │ HTTPS (TLS 1.3 Strict) — Required for WebRTC Camera Access
                  ▼
-[ Frontend: Vercel / Netlify ] (React 19 / Vite SPA)
-                 │ REST API / JWT
+[ Frontend SPA: Vercel / Netlify / Cloudflare Pages ] (React 19 / Vite SPA)
+                 │
+                 │ HTTPS REST API + Authorization: Bearer <JWT>
                  ▼
-[ Backend: Render / Railway / AWS ECS ] (FastAPI Python Gateway)
-                 │ PostgREST / Postgres Connection / Service Role
-                 ▼
-[ Persistent Layer: Supabase ]
-   ├── PostgreSQL 15+ (With Row Level Security)
-   ├── Supabase Auth (Identity & Session Tokens)
-   ├── Supabase Realtime (Websocket Broadcasts)
-   └── Supabase Storage (Evidence Vault)
+[ Backend API Gateway: AWS ECS / Render / Railway ] (FastAPI Python 3.12 Gateway)
+                 ├── Deterministic 6-Factor Verification Engine (Authoritative)
+                 ├── GS1 DataMatrix / Barcode Decoder & Cross-Checker
+                 ├── Rate Limiting (Sliding Window per IP/User)
+                 ├── Health & Telemetry Probes (/health/live, /health/ready)
+                 │
+                 ├──► [ Google Gemini AI Service ] (Backend-Only API Key)
+                 │       ├── Vision Multimodal OCR (Label, Batch, Expiry, Serial)
+                 │       ├── Grounded Explainability Assistant
+                 │       └── Packaging Condition Physical Anomaly Scanner
+                 │
+                 ├──► [ Persistent Database: MongoDB Atlas / Supabase PostgreSQL ]
+                 │       ├── Medicines Registry & Batch Ledgers
+                 │       ├── Verification Ledger (Immutable Audit Records)
+                 │       ├── User Profiles & RBAC (Admin / User)
+                 │       └── Personal Medicine Cabinets
+                 │
+                 └──► [ Persistent Image Storage: S3 / Cloud Storage / Supabase Storage ]
+                         ├── Evidence Packaging Photos (JPEG / PNG)
+                         └── Authenticated User-Scoped Access Control (IDOR Protected)
 ```
 
 ---
 
 ## 2. Production Environment Variables
 
-### Backend Environment Variables (`backend/.env`)
+### Backend Configuration (`backend/.env`)
 
 ```ini
-# Core Configuration
-DATABASE_BACKEND=supabase
+# Core Environment
 FASTAPI_ENV=production
 DEBUG=false
 
-# Supabase Production Credentials
+# Database Selection (mongodb | supabase)
+DATABASE_BACKEND=mongodb
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority
+DATABASE_NAME=medverify_production
+
+# Optional Supabase Connection
 SUPABASE_URL=https://<your-project-id>.supabase.co
 SUPABASE_ANON_KEY=<your-anon-publishable-key>
-SUPABASE_SERVICE_ROLE_KEY=<your-service-role-secret-key>
+SUPABASE_SERVICE_ROLE_KEY=<your-service-role-secret-key-keep-private>
 SUPABASE_JWT_SECRET=<your-supabase-jwt-secret>
 
-# Security Secrets
-JWT_SECRET=<generate_secure_random_key_min_64_characters>
+# Application Security & Token Expiry
+JWT_SECRET=<generate_high_entropy_secret_min_64_characters>
 JWT_ALGORITHM=HS256
 JWT_EXPIRY_MINUTES=60
 
-# Allowed CORS Origins (Do NOT use "*" in production)
+# Production CORS & Allowed Origins (Strict HTTPS only — never "*" or localhost)
 FRONTEND_URL=https://medverify.yourdomain.com
+CORS_ORIGINS=https://medverify.yourdomain.com,https://admin.medverify.yourdomain.com
 
-# OpenAI LLM Intelligence Layer
-OPENAI_API_KEY=<your-production-openai-api-key>
-OPENAI_MODEL=gpt-5.6-luna
-OPENAI_MAX_OUTPUT_TOKENS=800
-OPENAI_TIMEOUT_SECONDS=20
-OPENAI_RATE_LIMIT_PER_MINUTE=10
-OPENAI_ADMIN_RATE_LIMIT_PER_MINUTE=30
+# Google Gemini Intelligence Layer (Backend Only — Never Expose to Client)
+GEMINI_API_KEY=<your-production-google-gemini-api-key>
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MAX_OUTPUT_TOKENS=2500
+GEMINI_TIMEOUT_SECONDS=35.0
+GEMINI_RATE_LIMIT_PER_MINUTE=40
+GEMINI_ADMIN_RATE_LIMIT_PER_MINUTE=60
+
+# Persistent Image Storage Configuration
+IMAGE_STORAGE_DIR=/var/data/medverify/uploads
+MAX_IMAGE_SIZE_BYTES=10485760
+ALLOWED_IMAGE_MIMES=image/jpeg,image/png,image/webp
 ```
 
-### Frontend Environment Variables (`frontend/.env`)
+### Frontend Configuration (`frontend/.env`)
 
 ```ini
+# Production API Base URL (Must be HTTPS; must NOT be localhost or 127.0.0.1)
 VITE_API_URL=https://api.medverify.yourdomain.com
+
+# Optional Supabase Integration
 VITE_SUPABASE_URL=https://<your-project-id>.supabase.co
 VITE_SUPABASE_ANON_KEY=<your-anon-publishable-key>
 ```
 
 ---
 
-## 3. Database Deployment (Supabase)
+## 3. Containerized Backend Deployment
 
-1. Provision a production Supabase project via [Supabase Management Console](https://supabase.com).
-2. Execute migrations in order:
-   - `supabase/migrations/001_initial_schema.sql`
-   - `supabase/migrations/002_indexes.sql`
-   - `supabase/migrations/003_rls.sql`
-   - `supabase/migrations/004_functions.sql`
-3. Verify that Row Level Security is **ENABLED** across all tables.
-4. Verify Realtime publication includes `verification_records` and `admin_activity`.
-
----
-
-## 4. Backend Deployment (Docker / Cloud Run / Railway / Render)
-
-### Dockerfile (Recommended for Containerized Deployments)
+### Dockerfile (`backend/Dockerfile`)
 
 ```dockerfile
 FROM python:3.12-slim
 
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
 WORKDIR /app
+
+# Install system dependencies for image processing
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Persistent storage mount point for uploaded packaging evidence
+RUN mkdir -p /var/data/medverify/uploads && chmod 750 /var/data/medverify/uploads
+
+EXPOSE 8001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8001/health/live || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "4"]
 ```
 
 ---
 
-## 5. Frontend Deployment (Vercel / Cloudflare Pages)
+## 4. Frontend Production Build & Hosting
 
-1. Connect Git repository to Vercel.
-2. Set Build Command: `npm run build`.
-3. Set Output Directory: `dist`.
-4. Configure Environment Variables:
-   - `VITE_API_URL`
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-5. Ensure HTTPS is enforced (Required by modern mobile browsers for WebRTC camera access).
+1. Build command: `npm run build` (`tsc -b && vite build`).
+2. Output directory: `dist`.
+3. Single Page Application (SPA) Routing Rewrite rule:
+   - All routes (`/*`) rewrite to `/index.html` with status `200`.
+4. Enforce TLS 1.3 / HTTPS: Required by modern mobile operating systems (iOS WebKit and Android Chromium) for WebRTC `getUserMedia()` camera access.
 
 ---
 
-## 6. Post-Deployment Verification Checklist
+## 5. Health Check & Monitoring Endpoints
 
-- [ ] Health check responds: `GET https://api.yourdomain.com/health` returns `{"status":"ok"}`.
-- [ ] Database diagnostic telemetry: `GET /api/admin/system-health` confirms Supabase connection.
-- [ ] Camera scanner opens successfully on mobile device under HTTPS.
-- [ ] Canonical test scan `(01)89012345678901(10)BATCH-2026-001(17)280109(21)SER-PC-000001` authenticates.
-- [ ] Admin Realtime stream updates automatically on new verification events.
-- [ ] RLS policies prevent normal users from querying admin routes.
-- [ ] Service role key is **NEVER** exposed in client-side bundle.
+| Endpoint | Method | Purpose | Expected Status |
+| :--- | :--- | :--- | :--- |
+| `/health` | `GET` | General health ping | `200 OK` (`{"status":"ok"}`) |
+| `/health/live` | `GET` | Container liveness check | `200 OK` (`{"status":"alive"}`) |
+| `/health/ready` | `GET` | Deep readiness probe (Database connectivity, latency) | `200 OK` (`{"status":"ready"}`) or `503` if degraded |
+| `/api/admin/system-health` | `GET` | Telemetry for system administrators | `200 OK` (Admin role required) |
+
+---
+
+## 6. Pre-Flight Production Readiness Checklist
+
+- [x] Production `VITE_API_URL` uses secure `https://` domain without localhost.
+- [x] CORS configuration explicitly whitelists production domain names only.
+- [x] Google Gemini API keys are confined strictly to backend runtime variables.
+- [x] Role-Based Access Control (RBAC) blocks unauthorized access to `/api/admin/*`.
+- [x] Insecure Direct Object Reference (IDOR) controls protect user verification histories, images, and cabinets.
+- [x] Deterministic 6-factor verification engine remains authoritative; Gemini OCR cannot override verification statuses.
+- [x] Idempotent database indexing ensures fast query execution and enforces GTIN and user email uniqueness.
+- [x] WebRTC Camera scanner functions properly under HTTPS on mobile and desktop browsers.
+- [x] Graceful degraded mode handles transient database or AI service outages without application crash.
