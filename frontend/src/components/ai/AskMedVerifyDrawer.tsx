@@ -12,6 +12,9 @@ import {
   FileCheck,
   Bot,
   User as UserIcon,
+  Clock,
+  WifiOff,
+  RotateCw,
 } from 'lucide-react';
 import { askMedVerify } from '../../api/client';
 import type { AskMedVerifyResponse } from '../../types';
@@ -23,6 +26,59 @@ interface Message {
   groundedFacts?: string[];
   safetyNotice?: string;
   timestamp: Date;
+}
+
+interface FormattedError {
+  category: 'timeout' | 'auth' | 'quota' | 'offline' | 'unavailable' | 'unknown';
+  title: string;
+  message: string;
+}
+
+function classifyAiError(err: any): FormattedError {
+  const msg = (err?.message || '').toLowerCase();
+  const status = err?.status;
+  const code = err?.code;
+
+  if (code === 'TIMEOUT' || msg.includes('timed out') || msg.includes('timeout') || status === 504) {
+    return {
+      category: 'timeout',
+      title: 'Gemini Assistant Timeout',
+      message: 'The AI assistant took too long to respond. Your message is preserved. You can retry.',
+    };
+  }
+  if (code === 'NETWORK_ERROR' || msg.includes('failed to fetch') || msg.includes('connection refused') || msg.includes('unreachable')) {
+    return {
+      category: 'offline',
+      title: 'Backend Unreachable',
+      message: "MedVerify's backend is currently unavailable. Please try again shortly.",
+    };
+  }
+  if (status === 429 || msg.includes('rate limit') || msg.includes('quota') || msg.includes('resource_exhausted')) {
+    return {
+      category: 'quota',
+      title: 'Usage Limit Reached',
+      message: 'The AI service has temporarily reached its usage limit. Please try again later.',
+    };
+  }
+  if (status === 401 || status === 403 || msg.includes('invalid api key') || msg.includes('authentication') || msg.includes('unauthorized')) {
+    return {
+      category: 'auth',
+      title: 'Configuration Notice',
+      message: 'The AI assistant is not configured correctly. Please contact the administrator.',
+    };
+  }
+  if (status === 503 || msg.includes('503') || msg.includes('high demand') || msg.includes('unavailable')) {
+    return {
+      category: 'unavailable',
+      title: 'Service Temporarily Unavailable',
+      message: 'The AI provider is temporarily unavailable.',
+    };
+  }
+  return {
+    category: 'unknown',
+    title: 'Assistant Notice',
+    message: err?.message || 'The AI assistant encountered an unexpected issue. Please try again.',
+  };
 }
 
 interface AskMedVerifyDrawerProps {
@@ -155,7 +211,8 @@ export const AskMedVerifyDrawer: React.FC<AskMedVerifyDrawerProps> = ({
   const [inputText, setInputText] = useState('');
   const [conversationId, setConversationId] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<FormattedError | null>(null);
+  const [lastFailedQuery, setLastFailedQuery] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -180,7 +237,8 @@ export const AskMedVerifyDrawer: React.FC<AskMedVerifyDrawerProps> = ({
     if (!query || loading) return;
 
     setInputText('');
-    setError(null);
+    setErrorDetails(null);
+    setLastFailedQuery(null);
 
     const userMsg: Message = {
       id: `usr_${Date.now()}`,
@@ -213,10 +271,28 @@ export const AskMedVerifyDrawer: React.FC<AskMedVerifyDrawerProps> = ({
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err: any) {
       console.error('Ask MedVerify error:', err);
-      setError(err.message || 'MedVerify AI is temporarily unavailable.');
+      const classified = classifyAiError(err);
+      setErrorDetails(classified);
+      setLastFailedQuery(query);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRetry = () => {
+    if (!lastFailedQuery || loading) return;
+    // Remove the failed user message before resubmitting to prevent duplicate messages
+    setMessages((prev) => {
+      const lastIndex = prev.map((m) => m.sender).lastIndexOf('user');
+      if (lastIndex !== -1 && prev[lastIndex].text === lastFailedQuery) {
+        return prev.filter((_, idx) => idx !== lastIndex);
+      }
+      return prev;
+    });
+    const queryToRetry = lastFailedQuery;
+    setErrorDetails(null);
+    setLastFailedQuery(null);
+    handleSendMessage(queryToRetry);
   };
 
   if (!isOpen) return null;
@@ -314,10 +390,57 @@ export const AskMedVerifyDrawer: React.FC<AskMedVerifyDrawerProps> = ({
               </div>
             )}
 
-            {error && (
-              <div className="ask-ai-error-notice">
-                <AlertTriangle size={14} />
-                <span>{error}</span>
+            {errorDetails && (
+              <div
+                className={`ask-ai-error-notice ask-ai-error-notice--${errorDetails.category}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px',
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  background: errorDetails.category === 'timeout' ? '#fffbeb' : '#fef2f2',
+                  border: `1px solid ${errorDetails.category === 'timeout' ? '#fde68a' : '#fecaca'}`,
+                  color: errorDetails.category === 'timeout' ? '#92400e' : '#991b1b',
+                }}
+              >
+                {errorDetails.category === 'timeout' && (
+                  <Clock size={16} style={{ color: '#d97706', flexShrink: 0, marginTop: '2px' }} />
+                )}
+                {errorDetails.category === 'offline' && (
+                  <WifiOff size={16} style={{ color: '#dc2626', flexShrink: 0, marginTop: '2px' }} />
+                )}
+                {errorDetails.category !== 'timeout' && errorDetails.category !== 'offline' && (
+                  <AlertTriangle size={16} style={{ color: '#dc2626', flexShrink: 0, marginTop: '2px' }} />
+                )}
+                <div style={{ flex: 1 }}>
+                  <strong style={{ display: 'block', fontSize: '13px', marginBottom: '3px' }}>
+                    {errorDetails.title}
+                  </strong>
+                  <span style={{ fontSize: '12px', lineHeight: '1.4', display: 'block' }}>
+                    {errorDetails.message}
+                  </span>
+                  {lastFailedQuery && (
+                    <div style={{ marginTop: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-xs"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          fontSize: '12px',
+                          padding: '4px 10px',
+                          cursor: 'pointer',
+                        }}
+                        onClick={handleRetry}
+                      >
+                        <RotateCw size={12} />
+                        Retry Question
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
