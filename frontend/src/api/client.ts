@@ -77,6 +77,7 @@ interface FetchOptions extends RequestInit {
 }
 
 const DEFAULT_TIMEOUT_MS = 15000;
+const AI_TIMEOUT_MS = 45000;
 const MAX_IDEMPOTENT_RETRIES = 2;
 
 async function sleep(ms: number): Promise<void> {
@@ -174,7 +175,7 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
       console.error('[MedVerify API Client] Network or Fetch Error:', { url, method, error: err });
       const code: ApiErrorCode = isAbort ? 'TIMEOUT' : 'NETWORK_ERROR';
       const message = isAbort
-        ? 'Request to MedVerify API timed out. Please check backend connection.'
+        ? 'The request took too long to complete and timed out. Your request was preserved.'
         : err?.message || 'Failed to connect to MedVerify API.';
 
       throw new MedVerifyApiError(message, code, {
@@ -710,6 +711,7 @@ export async function explainVerification(data: {
   return apiFetch<import('../types').VerificationExplanation>('/api/ai/explain-verification', {
     method: 'POST',
     body: JSON.stringify(data),
+    timeoutMs: AI_TIMEOUT_MS,
   });
 }
 
@@ -722,6 +724,7 @@ export async function askMedVerify(data: {
   return apiFetch<import('../types').AskMedVerifyResponse>('/api/ai/chat', {
     method: 'POST',
     body: JSON.stringify(data),
+    timeoutMs: AI_TIMEOUT_MS,
   });
 }
 
@@ -731,6 +734,7 @@ export async function normalizeOCR(data: {
   return apiFetch<import('../types').OCRNormalizedCandidate>('/api/ai/normalize-ocr', {
     method: 'POST',
     body: JSON.stringify(data),
+    timeoutMs: AI_TIMEOUT_MS,
   });
 }
 
@@ -741,6 +745,7 @@ export async function adminAIAnalyze(data: {
   return apiFetch<import('../types').AdminAIAnalyzeResponse>('/api/admin/ai/analyze', {
     method: 'POST',
     body: JSON.stringify(data),
+    timeoutMs: AI_TIMEOUT_MS,
   });
 }
 

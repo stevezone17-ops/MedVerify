@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.5-flash"
     gemini_max_output_tokens: int = 2500
     gemini_timeout_seconds: float = 35.0
+    gemini_connect_timeout_seconds: float = 10.0
+    gemini_overall_timeout_seconds: float = 45.0
     gemini_rate_limit_per_minute: int = 40
     gemini_admin_rate_limit_per_minute: int = 60
 
