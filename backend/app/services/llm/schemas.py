@@ -149,3 +149,6 @@ class AIHealthResponse(BaseModel):
     model: str = Field(..., description="Configured model identifier")
     active_model: str = Field("gemini-3.5-flash", description="Currently active and verified model")
     reason: Optional[str] = Field(None, description="Failure reason if unavailable")
+    status_code: str = Field("HEALTHY", description="Operational health classification code")
+    client_initialized: bool = Field(True, description="Whether GenAI SDK client instance is active")
+    timeout_seconds: float = Field(35.0, description="Configured inference timeout in seconds")

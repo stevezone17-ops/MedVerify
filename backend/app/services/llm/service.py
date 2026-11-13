@@ -24,6 +24,13 @@ from app.services.llm.client import (
     stream_gemini_chat,
     is_ai_available,
     resolve_active_model,
+    get_gemini_client,
+    GeminiServiceError,
+    GeminiAuthError,
+    GeminiQuotaError,
+    GeminiModelError,
+    GeminiTimeoutError,
+    GeminiUnavailableError,
 )
 from app.services.llm.prompts import (
     EXPLAIN_VERIFICATION_SYSTEM_PROMPT,
@@ -511,17 +518,105 @@ Analyze the provided metrics and return a JSON object strictly conforming to:
     # -----------------------------------------------------------------------
 
     def get_health(self) -> AIHealthResponse:
-        """Return non-sensitive status of the Gemini LLM layer."""
-        available, reason = is_ai_available()
-        active_model = resolve_active_model() if available else (getattr(settings, "gemini_model", "gemini-3.5-flash") or "gemini-3.5-flash")
+        """Return non-sensitive status of the Gemini LLM layer with 60s health-check caching."""
+        now = time.time()
+        if hasattr(self, "_cached_health") and self._cached_health:
+            cached_resp, cached_time = self._cached_health
+            if (now - cached_time) < 60.0:
+                return cached_resp
+
         configured_model = getattr(settings, "gemini_model", "gemini-3.5-flash") or "gemini-3.5-flash"
-        return AIHealthResponse(
-            available=available,
-            provider="google-gemini",
-            model=configured_model,
-            active_model=active_model,
-            reason=reason,
-        )
+        timeout_sec = float(getattr(settings, "gemini_timeout_seconds", 35.0) or 35.0)
+        available, reason = is_ai_available()
+
+        if not available:
+            resp = AIHealthResponse(
+                available=False,
+                provider="google-gemini",
+                model=configured_model,
+                active_model=configured_model,
+                reason=reason or "GEMINI_API_KEY is not configured.",
+                status_code="NOT_CONFIGURED",
+                client_initialized=False,
+                timeout_seconds=timeout_sec,
+            )
+            self._cached_health = (resp, now)
+            return resp
+
+        client = get_gemini_client()
+        if not client:
+            resp = AIHealthResponse(
+                available=False,
+                provider="google-gemini",
+                model=configured_model,
+                active_model=configured_model,
+                reason="Failed to initialize GenAI client. Please check API key validity.",
+                status_code="CLIENT_INIT_FAILED",
+                client_initialized=False,
+                timeout_seconds=timeout_sec,
+            )
+            self._cached_health = (resp, now)
+            return resp
+
+        try:
+            active_model = resolve_active_model()
+            resp = AIHealthResponse(
+                available=True,
+                provider="google-gemini",
+                model=configured_model,
+                active_model=active_model,
+                reason=None,
+                status_code="HEALTHY",
+                client_initialized=True,
+                timeout_seconds=timeout_sec,
+            )
+        except GeminiAuthError as a_err:
+            resp = AIHealthResponse(
+                available=False,
+                provider="google-gemini",
+                model=configured_model,
+                active_model=configured_model,
+                reason=str(a_err),
+                status_code="INVALID_CREDENTIALS",
+                client_initialized=True,
+                timeout_seconds=timeout_sec,
+            )
+        except GeminiModelError as m_err:
+            resp = AIHealthResponse(
+                available=False,
+                provider="google-gemini",
+                model=configured_model,
+                active_model=configured_model,
+                reason=str(m_err),
+                status_code="MODEL_UNAVAILABLE",
+                client_initialized=True,
+                timeout_seconds=timeout_sec,
+            )
+        except GeminiQuotaError as q_err:
+            resp = AIHealthResponse(
+                available=False,
+                provider="google-gemini",
+                model=configured_model,
+                active_model=configured_model,
+                reason=str(q_err),
+                status_code="QUOTA_EXCEEDED",
+                client_initialized=True,
+                timeout_seconds=timeout_sec,
+            )
+        except Exception as exc:
+            resp = AIHealthResponse(
+                available=False,
+                provider="google-gemini",
+                model=configured_model,
+                active_model=configured_model,
+                reason=f"AI service unavailable: {exc}",
+                status_code="SERVICE_UNAVAILABLE",
+                client_initialized=True,
+                timeout_seconds=timeout_sec,
+            )
+
+        self._cached_health = (resp, now)
+        return resp
 
     # -----------------------------------------------------------------------
     # Helper: Extract Grounded Evidence (Stripping all PII)
