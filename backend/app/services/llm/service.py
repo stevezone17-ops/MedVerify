@@ -80,6 +80,19 @@ rate_limiter = RateLimiter()
 # In-memory conversational memory: session_id -> list of {"role": str, "content": str}
 _conversation_memory: Dict[str, List[Dict[str, str]]] = defaultdict(list)
 _MAX_HISTORY_TURNS = 6
+_MAX_HISTORY_TOTAL_CHARS = 4000
+
+
+def _prune_history(turns: List[Dict[str, str]], max_turns: int = _MAX_HISTORY_TURNS, max_chars: int = _MAX_HISTORY_TOTAL_CHARS) -> List[Dict[str, str]]:
+    """Prune conversation turns to stay within turn and character budgets without unbounded growth."""
+    res = list(turns)
+    if len(res) > max_turns * 2:
+        res = res[-max_turns * 2:]
+    total_chars = sum(len(t.get("content", "")) for t in res)
+    while res and total_chars > max_chars:
+        removed = res.pop(0)
+        total_chars -= len(removed.get("content", ""))
+    return res
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +232,7 @@ There is no active scanned verification record for this query. You must explicit
 
         # 5. Fetch multi-turn conversation history
         history_key = f"{user_id}:{conv_id}"
-        past_turns = _conversation_memory[history_key]
+        past_turns = _prune_history(_conversation_memory[history_key])
 
         user_prompt = f"""
 USER QUESTION (IN {target_lang}):
@@ -290,11 +303,10 @@ INSTRUCTIONS FOR ANSWER GENERATION:
                 # If model returned plain text instead of nested JSON:
                 answer = str(parsed)
 
-            # Record turn in conversation memory
+            # Record turn in conversation memory with bounded memory safeguard
             _conversation_memory[history_key].append({"role": "user", "content": req.question})
             _conversation_memory[history_key].append({"role": "assistant", "content": answer})
-            if len(_conversation_memory[history_key]) > _MAX_HISTORY_TURNS * 2:
-                _conversation_memory[history_key] = _conversation_memory[history_key][-_MAX_HISTORY_TURNS * 2:]
+            _conversation_memory[history_key] = _prune_history(_conversation_memory[history_key])
 
             active_model = resolve_active_model()
             return AskMedVerifyResponse(
@@ -335,7 +347,7 @@ INSTRUCTIONS FOR ANSWER GENERATION:
             system_instruction += "\n\nNO ACTIVE VERIFICATION RECORD LOADED: No specific verification scan record is loaded in this session. State clearly that no current scan evidence exists."
 
         history_key = f"{user_id}:{conv_id}"
-        past_turns = _conversation_memory[history_key]
+        past_turns = _prune_history(_conversation_memory[history_key])
 
         full_response = []
         try:
@@ -352,8 +364,7 @@ INSTRUCTIONS FOR ANSWER GENERATION:
             combined = "".join(full_response)
             _conversation_memory[history_key].append({"role": "user", "content": req.question})
             _conversation_memory[history_key].append({"role": "assistant", "content": combined})
-            if len(_conversation_memory[history_key]) > _MAX_HISTORY_TURNS * 2:
-                _conversation_memory[history_key] = _conversation_memory[history_key][-_MAX_HISTORY_TURNS * 2:]
+            _conversation_memory[history_key] = _prune_history(_conversation_memory[history_key])
 
         except Exception as exc:
             logger.error("Gemini stream error: %s", exc)
