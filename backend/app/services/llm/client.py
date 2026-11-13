@@ -2,12 +2,12 @@
 
 Enforces:
 - Backend-only API key handling (never exposed to frontend/clients)
-- Model verification and configurability via GEMINI_MODEL / backend/.env
-- Automatic resilience and fallback if configured model is experiencing demand spikes (503)
-- Strict verification safeguards (Gemini never determines authenticity)
+- Explicit HTTP timeout configuration via settings.gemini_timeout_seconds
+- Model verification and configurability via GEMINI_MODEL / backend/.env (no silent switching)
 - Structured JSON and streaming response support
 - Safe metadata logging without secrets or PII
-- Graceful exception translation
+- Bounded retries with exponential backoff for transient errors
+- Specific exception classification (auth, quota, model, timeout, unavailable)
 """
 
 import json
@@ -17,6 +17,7 @@ import re
 import time
 from typing import Optional, Dict, Any, List, Generator
 
+import httpx
 from google import genai
 from google.genai import types
 from google.genai import errors
@@ -25,18 +26,52 @@ from app.config import settings
 
 logger = logging.getLogger("medverify.gemini")
 
+# ---------------------------------------------------------------------------
+# Specific Exception Hierarchy for Gemini Operations
+# ---------------------------------------------------------------------------
+
+class GeminiServiceError(RuntimeError):
+    """Base exception for all Gemini AI service errors."""
+    pass
+
+
+class GeminiAuthError(GeminiServiceError):
+    """Raised when the Gemini API key is missing, invalid, or unauthorized."""
+    pass
+
+
+class GeminiQuotaError(GeminiServiceError):
+    """Raised when Gemini API quota or rate limit is exceeded."""
+    pass
+
+
+class GeminiModelError(GeminiServiceError):
+    """Raised when the configured Gemini model is invalid, deprecated, or not found."""
+    pass
+
+
+class GeminiTimeoutError(GeminiServiceError):
+    """Raised when Gemini generation exceeds the configured deadline."""
+    pass
+
+
+class GeminiUnavailableError(GeminiServiceError):
+    """Raised when Gemini service is temporarily down, overloaded, or returned 503."""
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Client State and Model Caching
+# ---------------------------------------------------------------------------
+
 _gemini_client: Optional[genai.Client] = None
 _client_initialized_key: Optional[str] = None
 _verified_active_model: Optional[str] = None
 _model_verification_timestamp: float = 0.0
-_MODEL_CACHE_TTL_SECONDS = 300.0  # 5 minutes
+_MODEL_CACHE_TTL_SECONDS = 3600.0  # 1 hour cache to avoid unnecessary calls
 
-# Fallback models in order of preference if primary experiences high demand spikes (503)
-FALLBACK_MODELS = [
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-3.8-flash",
-]
+MAX_TRANSIENT_RETRIES = 2
+INITIAL_RETRY_BACKOFF_SECONDS = 1.0
 
 
 def get_gemini_client() -> Optional[genai.Client]:
@@ -44,6 +79,7 @@ def get_gemini_client() -> Optional[genai.Client]:
     
     The API key is strictly retrieved from backend configuration / environment
     and NEVER passed to the frontend or exposed to clients.
+    Configures explicit HTTP timeouts from settings.gemini_timeout_seconds.
     """
     global _gemini_client, _client_initialized_key
 
@@ -56,9 +92,12 @@ def get_gemini_client() -> Optional[genai.Client]:
 
     if _gemini_client is None or _client_initialized_key != api_key:
         try:
-            _gemini_client = genai.Client(api_key=api_key)
+            timeout_sec = float(getattr(settings, "gemini_timeout_seconds", 35.0) or 35.0)
+            timeout_ms = int(timeout_sec * 1000)
+            http_options = types.HttpOptions(timeout=timeout_ms)
+            _gemini_client = genai.Client(api_key=api_key, http_options=http_options)
             _client_initialized_key = api_key
-            logger.info("Initialized Google GenAI client successfully.")
+            logger.info("Initialized Google GenAI client with explicit timeout=%dms.", timeout_ms)
         except Exception as exc:
             logger.error("Failed to initialize Google GenAI client: %s", exc)
             return None
@@ -78,10 +117,11 @@ def is_ai_available() -> tuple[bool, Optional[str]]:
 
 
 def resolve_active_model(model_override: Optional[str] = None) -> str:
-    """Verify and resolve an active, supported, and available Gemini model.
+    """Verify and resolve the active Gemini model.
     
-    If the requested model encounters a 503 high-demand spike or is deprecated,
-    this seamlessly falls back to an operational model from FALLBACK_MODELS.
+    Verifies that the configured model exists and is accessible.
+    Strict rule: Never silently switch models if the configured model is unavailable;
+    instead, report the exact configuration issue to the operator.
     """
     global _verified_active_model, _model_verification_timestamp
 
@@ -95,66 +135,94 @@ def resolve_active_model(model_override: Optional[str] = None) -> str:
     )
 
     now = time.time()
-    if _verified_active_model and (now - _model_verification_timestamp < _MODEL_CACHE_TTL_SECONDS):
+    if _verified_active_model == configured and (now - _model_verification_timestamp < _MODEL_CACHE_TTL_SECONDS):
         return _verified_active_model
 
     client = get_gemini_client()
     if not client:
         return configured
 
-    # Test candidate models to ensure availability
-    candidates = [configured] + [m for m in FALLBACK_MODELS if m != configured]
-    for candidate in candidates:
-        try:
-            # Minimal ping to test model responsiveness
-            cfg = types.GenerateContentConfig(max_output_tokens=3, temperature=0.0)
-            client.models.generate_content(
-                model=candidate,
-                contents="ping",
-                config=cfg,
-            )
-            _verified_active_model = candidate
+    try:
+        # Lightweight metadata verification without generating tokens or spending quota
+        model_info = client.models.get(model=configured)
+        _verified_active_model = configured
+        _model_verification_timestamp = now
+        logger.info(
+            "Verified configured Gemini model '%s' (%s) is active and accessible.",
+            configured,
+            getattr(model_info, "display_name", "Gemini Model"),
+        )
+        return configured
+    except errors.ClientError as c_err:
+        err_msg = str(c_err)
+        if "401" in err_msg or "403" in err_msg or "API_KEY_INVALID" in err_msg:
+            raise GeminiAuthError("Gemini authentication failed: Invalid or expired API key.") from c_err
+        if "404" in err_msg or "not found" in err_msg.lower():
+            raise GeminiModelError(
+                f"Configured Gemini model '{configured}' was not found or is unsupported for this API key. "
+                f"Please update GEMINI_MODEL in backend/.env to a valid model identifier."
+            ) from c_err
+        if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+            # If rate-limited on probe, trust configured model temporarily
+            logger.warning("Rate-limited during model probe, using configured '%s': %s", configured, c_err)
+            _verified_active_model = configured
             _model_verification_timestamp = now
-            if candidate != configured:
-                logger.warning(
-                    "Configured model '%s' unavailable; active model resolved to fallback '%s'",
-                    configured,
-                    candidate,
-                )
-            else:
-                logger.info("Verified Gemini model '%s' is supported and active.", candidate)
-            return candidate
-        except errors.ServerError as s_err:
-            logger.warning("Model candidate '%s' returned server error (503/demand): %s", candidate, s_err)
-            continue
-        except errors.ClientError as c_err:
-            if "404" in str(c_err) or "not available" in str(c_err).lower():
-                logger.warning("Model candidate '%s' not supported/available: %s", candidate, c_err)
-                continue
-            # If authentication error, raise immediately
-            if "401" in str(c_err) or "403" in str(c_err) or "API_KEY_INVALID" in str(c_err):
-                raise RuntimeError("Invalid or unauthorized GEMINI_API_KEY.") from c_err
-            continue
-        except Exception as exc:
-            logger.warning("Unexpected probe error for model candidate '%s': %s", candidate, exc)
-            continue
-
-    # Fallback to configured or first default if probing was inconclusive
-    _verified_active_model = configured
-    _model_verification_timestamp = now
-    return configured
+            return configured
+        raise GeminiServiceError(f"Gemini client error resolving model: {err_msg}") from c_err
+    except errors.ServerError as s_err:
+        # Transient server error on probe, trust configured model
+        logger.warning("Server error during model probe for '%s': %s", configured, s_err)
+        _verified_active_model = configured
+        _model_verification_timestamp = now
+        return configured
+    except Exception as exc:
+        logger.warning("Unexpected probe error for model '%s': %s", configured, exc)
+        _verified_active_model = configured
+        _model_verification_timestamp = now
+        return configured
 
 
 def clean_json_text(text: str) -> str:
     """Strip markdown code fence wrappers from model responses."""
     text = text.strip()
     if text.startswith("```"):
-        # Match ```json ... ``` or ``` ... ```
         pattern = r"^```(?:json)?\s*([\s\S]*?)\s*```$"
         match = re.match(pattern, text, re.IGNORECASE)
         if match:
             text = match.group(1).strip()
     return text
+
+
+def _translate_gemini_error(exc: Exception, timeout_seconds: float) -> GeminiServiceError:
+    """Translate raw SDK and network exceptions into categorized MedVerify exceptions."""
+    if isinstance(exc, (httpx.TimeoutException, TimeoutError)):
+        return GeminiTimeoutError(
+            f"Gemini generation timed out after {timeout_seconds:.1f}s. Please try again."
+        )
+
+    if isinstance(exc, errors.ClientError):
+        err_msg = str(exc)
+        if "401" in err_msg or "403" in err_msg or "API_KEY_INVALID" in err_msg:
+            return GeminiAuthError("Gemini authentication failed: Invalid or expired API key.")
+        if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+            return GeminiQuotaError("Gemini API quota or rate limit exceeded. Please wait a moment.")
+        if "404" in err_msg or "not found" in err_msg.lower():
+            return GeminiModelError("Configured Gemini model not found or unavailable.")
+        return GeminiServiceError(f"Gemini client error: {err_msg}")
+
+    if isinstance(exc, errors.ServerError):
+        err_msg = str(exc)
+        if "503" in err_msg or "UNAVAILABLE" in err_msg or "high demand" in err_msg.lower():
+            return GeminiUnavailableError("Gemini service is currently experiencing high demand. Please try again.")
+        return GeminiUnavailableError(f"Gemini server error: {err_msg}")
+
+    if isinstance(exc, json.JSONDecodeError):
+        return GeminiServiceError("Malformed response received from AI model.")
+
+    if isinstance(exc, GeminiServiceError):
+        return exc
+
+    return GeminiServiceError(f"Gemini service error: {exc}")
 
 
 def call_gemini_json(
@@ -166,20 +234,14 @@ def call_gemini_json(
     temperature: float = 0.2,
     max_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Call Google Gemini API enforcing structured JSON output mode.
-    
-    Supports optional conversation history for multi-turn conversational memory.
-    If response_schema (Pydantic model or schema dict) is provided,
-    guarantees strict schema enforcement by Google Gemini.
-    Returns the parsed JSON dictionary.
-    Raises RuntimeError on failure or if AI is unavailable.
-    """
+    """Call Google Gemini API enforcing structured JSON output mode with bounded retry."""
     client = get_gemini_client()
     if not client:
-        raise RuntimeError("Gemini service unavailable: GEMINI_API_KEY is missing or invalid.")
+        raise GeminiAuthError("Gemini service unavailable: GEMINI_API_KEY is missing or invalid.")
 
     model = resolve_active_model(model_override)
     max_out = max_tokens or getattr(settings, "gemini_max_output_tokens", 2500) or 2500
+    timeout_sec = float(getattr(settings, "gemini_timeout_seconds", 35.0) or 35.0)
 
     config_kwargs: Dict[str, Any] = {
         "system_instruction": system_instruction,
@@ -192,7 +254,6 @@ def call_gemini_json(
 
     config = types.GenerateContentConfig(**config_kwargs)
 
-    # Build contents with optional conversation history
     contents: List[types.Content] = []
     if history:
         for turn in history:
@@ -214,61 +275,49 @@ def call_gemini_json(
         )
     )
 
-    start_time = time.time()
-    try:
-        response = client.models.generate_content(
-            model=model,
-            contents=contents,
-            config=config,
-        )
+    attempt = 0
+    backoff = INITIAL_RETRY_BACKOFF_SECONDS
+    last_err: Optional[Exception] = None
 
-        latency_ms = int((time.time() - start_time) * 1000)
-        logger.info(
-            "Gemini JSON call complete. Model: %s | Latency: %dms",
-            model,
-            latency_ms,
-        )
+    while attempt <= MAX_TRANSIENT_RETRIES:
+        attempt += 1
+        start_time = time.time()
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
 
-        raw_content = response.text or "{}"
-        cleaned = clean_json_text(raw_content)
-        parsed = json.loads(cleaned)
-        return parsed
+            latency_ms = int((time.time() - start_time) * 1000)
+            logger.info("Gemini JSON call complete. Model: %s | Latency: %dms", model, latency_ms)
 
-    except errors.ClientError as c_err:
-        err_msg = str(c_err)
-        if "401" in err_msg or "403" in err_msg or "API_KEY_INVALID" in err_msg:
-            raise RuntimeError("Gemini authentication failed: Invalid or expired API key.") from c_err
-        if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-            raise RuntimeError("Gemini API quota or rate limit exceeded. Please wait a moment.") from c_err
-        raise RuntimeError(f"Gemini client error: {err_msg}") from c_err
+            raw_content = response.text or "{}"
+            cleaned = clean_json_text(raw_content)
+            parsed = json.loads(cleaned)
+            return parsed
 
-    except errors.ServerError as s_err:
-        err_msg = str(s_err)
-        if "503" in err_msg or "UNAVAILABLE" in err_msg:
-            # Attempt one emergency fallback with alternative model
-            try:
-                alt_model = "gemini-3.5-flash" if model != "gemini-3.5-flash" else "gemini-3.1-flash-lite"
-                logger.info("Retrying JSON generation on alternative model '%s' after 503...", alt_model)
-                retry_response = client.models.generate_content(
-                    model=alt_model,
-                    contents=contents,
-                    config=config,
+        except errors.ServerError as s_err:
+            last_err = s_err
+            err_msg = str(s_err)
+            if ("503" in err_msg or "UNAVAILABLE" in err_msg) and attempt <= MAX_TRANSIENT_RETRIES:
+                logger.warning(
+                    "Transient 503 from Gemini on attempt %d/%d. Backing off %.1fs...",
+                    attempt,
+                    MAX_TRANSIENT_RETRIES + 1,
+                    backoff,
                 )
-                cleaned = clean_json_text(retry_response.text or "{}")
-                return json.loads(cleaned)
-            except Exception as retry_exc:
-                logger.error("Alternative model retry failed: %s", retry_exc)
-            raise RuntimeError("Gemini service is currently experiencing high demand. Please try again.") from s_err
-        raise RuntimeError(f"Gemini server error: {err_msg}") from s_err
-        raise RuntimeError(f"Gemini server error: {err_msg}") from s_err
+                time.sleep(backoff)
+                backoff *= 2.0
+                continue
+            raise _translate_gemini_error(s_err, timeout_sec) from s_err
 
-    except json.JSONDecodeError as j_err:
-        logger.error("Failed to parse JSON response from Gemini: %s", j_err)
-        raise RuntimeError("Malformed response from AI model.") from j_err
+        except Exception as exc:
+            raise _translate_gemini_error(exc, timeout_sec) from exc
 
-    except Exception as exc:
-        logger.error("Gemini general error: %s", exc)
-        raise RuntimeError(f"Gemini service error: {exc}") from exc
+    if last_err:
+        raise _translate_gemini_error(last_err, timeout_sec)
+    raise GeminiServiceError("Gemini call failed after retries.")
 
 
 def call_gemini_chat(
@@ -279,16 +328,14 @@ def call_gemini_chat(
     temperature: float = 0.3,
     max_tokens: Optional[int] = None,
 ) -> str:
-    """Conduct a genuine multi-turn conversational exchange with Google Gemini.
-    
-    Accepts conversation history: list of {'role': 'user' | 'assistant' | 'model', 'content': str}.
-    """
+    """Conduct a genuine multi-turn conversational exchange with Google Gemini."""
     client = get_gemini_client()
     if not client:
-        raise RuntimeError("Gemini service unavailable: GEMINI_API_KEY is missing or invalid.")
+        raise GeminiAuthError("Gemini service unavailable: GEMINI_API_KEY is missing or invalid.")
 
     model = resolve_active_model(model_override)
     max_out = max_tokens or getattr(settings, "gemini_max_output_tokens", 1500) or 1500
+    timeout_sec = float(getattr(settings, "gemini_timeout_seconds", 35.0) or 35.0)
 
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
@@ -296,7 +343,6 @@ def call_gemini_chat(
         max_output_tokens=max_out,
     )
 
-    # Format history into google-genai Content objects
     sdk_history: List[types.Content] = []
     for turn in history:
         raw_role = turn.get("role", "user")
@@ -310,41 +356,42 @@ def call_gemini_chat(
                 )
             )
 
-    start_time = time.time()
-    try:
-        chat = client.chats.create(model=model, config=config, history=sdk_history)
-        response = chat.send_message(message)
+    attempt = 0
+    backoff = INITIAL_RETRY_BACKOFF_SECONDS
+    last_err: Optional[Exception] = None
 
-        latency_ms = int((time.time() - start_time) * 1000)
-        logger.info("Gemini Chat call complete. Model: %s | Latency: %dms", model, latency_ms)
+    while attempt <= MAX_TRANSIENT_RETRIES:
+        attempt += 1
+        start_time = time.time()
+        try:
+            chat = client.chats.create(model=model, config=config, history=sdk_history)
+            response = chat.send_message(message)
 
-        return response.text or ""
+            latency_ms = int((time.time() - start_time) * 1000)
+            logger.info("Gemini Chat call complete. Model: %s | Latency: %dms", model, latency_ms)
+            return response.text or ""
 
-    except errors.ClientError as c_err:
-        err_msg = str(c_err)
-        if "401" in err_msg or "403" in err_msg:
-            raise RuntimeError("Gemini authentication failed: Invalid API key.") from c_err
-        if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-            raise RuntimeError("Gemini rate limit exceeded. Please wait a moment.") from c_err
-        raise RuntimeError(f"Gemini client error: {err_msg}") from c_err
+        except errors.ServerError as s_err:
+            last_err = s_err
+            err_msg = str(s_err)
+            if ("503" in err_msg or "UNAVAILABLE" in err_msg) and attempt <= MAX_TRANSIENT_RETRIES:
+                logger.warning(
+                    "Transient 503 from Gemini Chat on attempt %d/%d. Backing off %.1fs...",
+                    attempt,
+                    MAX_TRANSIENT_RETRIES + 1,
+                    backoff,
+                )
+                time.sleep(backoff)
+                backoff *= 2.0
+                continue
+            raise _translate_gemini_error(s_err, timeout_sec) from s_err
 
-    except errors.ServerError as s_err:
-        err_msg = str(s_err)
-        if "503" in err_msg or "UNAVAILABLE" in err_msg:
-            # Fallback to alternate model
-            try:
-                alt_model = "gemini-3.5-flash" if model != "gemini-3.5-flash" else "gemini-3.1-flash-lite"
-                logger.info("Retrying chat on alternative model '%s' after 503...", alt_model)
-                chat = client.chats.create(model=alt_model, config=config, history=sdk_history)
-                return chat.send_message(message).text or ""
-            except Exception as retry_exc:
-                logger.error("Alternative model retry failed: %s", retry_exc)
-            raise RuntimeError("Gemini service is currently experiencing high demand. Please try again.") from s_err
-        raise RuntimeError(f"Gemini server error: {err_msg}") from s_err
+        except Exception as exc:
+            raise _translate_gemini_error(exc, timeout_sec) from exc
 
-    except Exception as exc:
-        logger.error("Gemini chat error: %s", exc)
-        raise RuntimeError(f"Gemini chat error: {exc}") from exc
+    if last_err:
+        raise _translate_gemini_error(last_err, timeout_sec)
+    raise GeminiServiceError("Gemini chat failed after retries.")
 
 
 def stream_gemini_chat(
@@ -358,10 +405,11 @@ def stream_gemini_chat(
     """Stream response tokens chunk by chunk for real-time conversational streaming."""
     client = get_gemini_client()
     if not client:
-        raise RuntimeError("Gemini service unavailable: GEMINI_API_KEY is missing or invalid.")
+        raise GeminiAuthError("Gemini service unavailable: GEMINI_API_KEY is missing or invalid.")
 
     model = resolve_active_model(model_override)
     max_out = max_tokens or getattr(settings, "gemini_max_output_tokens", 1500) or 1500
+    timeout_sec = float(getattr(settings, "gemini_timeout_seconds", 35.0) or 35.0)
 
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
@@ -390,7 +438,98 @@ def stream_gemini_chat(
                 yield chunk.text
     except Exception as exc:
         logger.error("Gemini stream error: %s", exc)
-        raise RuntimeError(f"Gemini streaming error: {exc}") from exc
+        raise _translate_gemini_error(exc, timeout_sec) from exc
+
+
+def call_gemini_vision_json(
+    system_instruction: str,
+    user_prompt: str,
+    images: List[Dict[str, Any]],
+    response_schema: Optional[Any] = None,
+    model_override: Optional[str] = None,
+    temperature: float = 0.1,
+    max_tokens: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Call Google Gemini multimodal model with packaging images and user instructions."""
+    client = get_gemini_client()
+    if not client:
+        raise GeminiAuthError("Gemini service unavailable: GEMINI_API_KEY is missing or invalid.")
+
+    model = resolve_active_model(model_override)
+    max_out = max_tokens or getattr(settings, "gemini_max_output_tokens", 3000) or 3000
+    timeout_sec = float(getattr(settings, "gemini_timeout_seconds", 35.0) or 35.0)
+
+    config_kwargs: Dict[str, Any] = {
+        "system_instruction": system_instruction,
+        "response_mime_type": "application/json",
+        "temperature": temperature,
+        "max_output_tokens": max_out,
+    }
+    if response_schema is not None:
+        config_kwargs["response_schema"] = response_schema
+
+    config = types.GenerateContentConfig(**config_kwargs)
+
+    parts: List[types.Part] = []
+    for idx, img_info in enumerate(images):
+        img_bytes = img_info.get("data")
+        mime = img_info.get("mime_type", "image/jpeg")
+        slot = img_info.get("slot", f"angle_{idx+1}")
+        if img_bytes:
+            parts.append(types.Part.from_text(text=f"--- PACKAGING PHOTOGRAPH {idx+1} [Slot: {slot}] ---"))
+            parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime))
+
+    parts.append(types.Part.from_text(text=user_prompt))
+    contents = [types.Content(role="user", parts=parts)]
+
+    attempt = 0
+    backoff = INITIAL_RETRY_BACKOFF_SECONDS
+    last_err: Optional[Exception] = None
+
+    while attempt <= MAX_TRANSIENT_RETRIES:
+        attempt += 1
+        start_time = time.time()
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
+
+            latency_ms = int((time.time() - start_time) * 1000)
+            logger.info(
+                "Gemini Vision call complete. Model: %s | Images: %d | Latency: %dms",
+                model,
+                len(images),
+                latency_ms,
+            )
+
+            raw_content = response.text or "{}"
+            cleaned = clean_json_text(raw_content)
+            parsed = json.loads(cleaned)
+            return parsed
+
+        except errors.ServerError as s_err:
+            last_err = s_err
+            err_msg = str(s_err)
+            if ("503" in err_msg or "UNAVAILABLE" in err_msg) and attempt <= MAX_TRANSIENT_RETRIES:
+                logger.warning(
+                    "Transient 503 from Gemini Vision on attempt %d/%d. Backing off %.1fs...",
+                    attempt,
+                    MAX_TRANSIENT_RETRIES + 1,
+                    backoff,
+                )
+                time.sleep(backoff)
+                backoff *= 2.0
+                continue
+            raise _translate_gemini_error(s_err, timeout_sec) from s_err
+
+        except Exception as exc:
+            raise _translate_gemini_error(exc, timeout_sec) from exc
+
+    if last_err:
+        raise _translate_gemini_error(last_err, timeout_sec)
+    raise GeminiServiceError("Gemini vision call failed after retries.")
 
 
 # ---------------------------------------------------------------------------
@@ -457,90 +596,3 @@ def call_openai_text(
 def get_openai_client():
     """Deprecated legacy accessor; returns None as Gemini is the primary engine."""
     return None
-
-
-def call_gemini_vision_json(
-    system_instruction: str,
-    user_prompt: str,
-    images: List[Dict[str, Any]],
-    response_schema: Optional[Any] = None,
-    model_override: Optional[str] = None,
-    temperature: float = 0.1,
-    max_tokens: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Call Google Gemini multimodal model with packaging images and user instructions.
-    
-    Extracts visual OCR, barcodes, and packaging observations enforcing structured JSON response.
-    """
-    client = get_gemini_client()
-    if not client:
-        raise RuntimeError("Gemini service unavailable: GEMINI_API_KEY is missing or invalid.")
-
-    model = resolve_active_model(model_override)
-    max_out = max_tokens or getattr(settings, "gemini_max_output_tokens", 3000) or 3000
-
-    config_kwargs: Dict[str, Any] = {
-        "system_instruction": system_instruction,
-        "response_mime_type": "application/json",
-        "temperature": temperature,
-        "max_output_tokens": max_out,
-    }
-    if response_schema is not None:
-        config_kwargs["response_schema"] = response_schema
-
-    config = types.GenerateContentConfig(**config_kwargs)
-
-    # Build multimodal content parts
-    parts: List[types.Part] = []
-    for idx, img_info in enumerate(images):
-        img_bytes = img_info.get("data")
-        mime = img_info.get("mime_type", "image/jpeg")
-        slot = img_info.get("slot", f"angle_{idx+1}")
-        if img_bytes:
-            parts.append(types.Part.from_text(text=f"--- PACKAGING PHOTOGRAPH {idx+1} [Slot: {slot}] ---"))
-            parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime))
-
-    parts.append(types.Part.from_text(text=user_prompt))
-    contents = [types.Content(role="user", parts=parts)]
-
-    start_time = time.time()
-    try:
-        response = client.models.generate_content(
-            model=model,
-            contents=contents,
-            config=config,
-        )
-
-        latency_ms = int((time.time() - start_time) * 1000)
-        logger.info(
-            "Gemini Vision call complete. Model: %s | Images: %d | Latency: %dms",
-            model,
-            len(images),
-            latency_ms,
-        )
-
-        raw_content = response.text or "{}"
-        cleaned = clean_json_text(raw_content)
-        parsed = json.loads(cleaned)
-        return parsed
-
-    except errors.ClientError as c_err:
-        err_msg = str(c_err)
-        if "401" in err_msg or "403" in err_msg or "API_KEY_INVALID" in err_msg:
-            raise RuntimeError("Gemini authentication failed: Invalid or expired API key.") from c_err
-        if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-            raise RuntimeError("Gemini API quota or rate limit exceeded. Please wait a moment.") from c_err
-        raise RuntimeError(f"Gemini client error: {err_msg}") from c_err
-
-    except errors.ServerError as s_err:
-        err_msg = str(s_err)
-        raise RuntimeError(f"Gemini server error: {err_msg}") from s_err
-
-    except json.JSONDecodeError as j_err:
-        logger.error("Failed to parse JSON response from Gemini Vision: %s", j_err)
-        raise RuntimeError("Malformed response from AI vision model.") from j_err
-
-    except Exception as exc:
-        logger.error("Gemini vision general error: %s", exc)
-        raise RuntimeError(f"Gemini vision service error: {exc}") from exc
-
