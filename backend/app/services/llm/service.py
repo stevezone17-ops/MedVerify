@@ -340,6 +340,13 @@ INSTRUCTIONS FOR ANSWER GENERATION:
             if doc:
                 verification_context = self._extract_grounded_evidence(doc)
 
+        available, reason = is_ai_available()
+        if not available:
+            logger.info("Gemini unavailable (%s). Streaming deterministic assistant fallback.", reason)
+            fallback = self._deterministic_chat_fallback(req, verification_context, conv_id)
+            yield fallback.answer
+            return
+
         system_instruction = ASK_MEDVERIFY_SYSTEM_PROMPT
         if verification_context:
             system_instruction += f"\n\nCURRENT ACTIVE VERIFICATION EVIDENCE:\n{json.dumps(verification_context, indent=2)}"
@@ -350,6 +357,7 @@ INSTRUCTIONS FOR ANSWER GENERATION:
         past_turns = _prune_history(_conversation_memory[history_key])
 
         full_response = []
+        stream_completed_cleanly = False
         try:
             stream_tokens = getattr(settings, "gemini_max_output_tokens", 2500) or 2500
             for chunk in stream_gemini_chat(
@@ -361,14 +369,16 @@ INSTRUCTIONS FOR ANSWER GENERATION:
                 full_response.append(chunk)
                 yield chunk
 
-            combined = "".join(full_response)
-            _conversation_memory[history_key].append({"role": "user", "content": req.question})
-            _conversation_memory[history_key].append({"role": "assistant", "content": combined})
-            _conversation_memory[history_key] = _prune_history(_conversation_memory[history_key])
-
+            stream_completed_cleanly = True
         except Exception as exc:
             logger.error("Gemini stream error: %s", exc)
-            yield f"\n[MedVerify AI notice: {exc}]"
+            yield f"\n[Stream interrupted: The AI service encountered a temporary error: {exc}]"
+        finally:
+            if stream_completed_cleanly and full_response:
+                combined = "".join(full_response)
+                _conversation_memory[history_key].append({"role": "user", "content": req.question})
+                _conversation_memory[history_key].append({"role": "assistant", "content": combined})
+                _conversation_memory[history_key] = _prune_history(_conversation_memory[history_key])
 
     # -----------------------------------------------------------------------
     # 3. OCR AI Normalization

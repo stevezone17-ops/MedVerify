@@ -728,6 +728,55 @@ export async function askMedVerify(data: {
   });
 }
 
+export async function streamAskMedVerify(
+  data: {
+    question: string;
+    verification_id?: string;
+    conversation_id?: string;
+    language?: string;
+  },
+  onChunk: (chunk: string) => void,
+  signal?: AbortSignal
+): Promise<string> {
+  const token = localStorage.getItem('medverify_token');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const url = buildEndpointUrl('/api/ai/chat/stream');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+    signal,
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const rawDetail = body.detail || body.error?.message || `HTTP ${res.status}`;
+    throw new MedVerifyApiError(rawDetail, 'SERVER_ERROR', { status: res.status, url });
+  }
+
+  if (!res.body) {
+    throw new MedVerifyApiError('No response body received from stream', 'SERVER_ERROR', { url });
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let fullText = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    fullText += chunk;
+    onChunk(chunk);
+  }
+
+  return fullText;
+}
+
 export async function normalizeOCR(data: {
   raw_text: string;
 }): Promise<import('../types').OCRNormalizedCandidate> {
