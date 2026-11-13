@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     openai_admin_rate_limit_per_minute: int = 30
 
     class Config:
-        env_file = ".env"
+        env_file = (".env", "backend/.env")
         env_file_encoding = "utf-8"
         extra = "ignore"
 
